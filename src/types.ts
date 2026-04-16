@@ -6,6 +6,20 @@ export interface JobProfile {
   experience: ExperienceLevel | string;
 }
 
+export interface JobSearchFilters {
+  employmentType?: string[];
+  remoteOnly?: boolean;
+  postedWithinHours?: number;
+}
+
+export interface JobSearchQuery {
+  role: string;
+  location?: string;
+  skills?: string[];
+  filters?: JobSearchFilters;
+  maxResults?: number;
+}
+
 export interface JobPosting {
   source: string;
   externalId: string;
