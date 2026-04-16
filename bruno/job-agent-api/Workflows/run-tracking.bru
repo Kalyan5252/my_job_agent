@@ -1,0 +1,15 @@
+meta {
+  name: Run Tracking Workflow
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/workflows/tracking/run
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
