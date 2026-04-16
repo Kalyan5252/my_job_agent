@@ -1,0 +1,42 @@
+meta {
+  name: Run Application Workflow
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/workflows/application/run
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+  Accept: application/json
+}
+
+body:json {
+  {
+    "job": {
+      "source": "demo",
+      "externalId": "demo-1",
+      "title": "Backend Engineer - Node.js",
+      "company": "Acme Labs",
+      "location": "Remote",
+      "description": "Build backend services using Node.js, MongoDB, and AI tooling.",
+      "requirements": ["Node.js", "MongoDB", "REST APIs", "AI integration"],
+      "applyUrl": "https://example.com/apply/demo-1",
+      "rawData": {
+        "provider": "seed"
+      },
+      "score": 82,
+      "apply": true,
+      "reasoning": "Strong match for required backend and AI skills"
+    },
+    "profile": {
+      "role": "Backend Engineer",
+      "skills": ["Node.js", "MongoDB", "AI"],
+      "experience": "fresher"
+    }
+  }
+}

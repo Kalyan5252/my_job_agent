@@ -1,5 +1,19 @@
-import "dotenv/config";
+import fs from "node:fs";
+import path from "node:path";
+import dotenv, { type DotenvParseOutput } from "dotenv";
 import { z } from "zod";
+
+loadEnv();
+
+const BoolFromEnv = z.preprocess((value) => {
+  if (typeof value === "boolean") return value;
+  if (typeof value !== "string") return value;
+
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "off", ""].includes(normalized)) return false;
+  return value;
+}, z.boolean());
 
 const EnvSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -19,7 +33,10 @@ const EnvSchema = z.object({
   MONGODB_DB_NAME: z.string().default("job_agent"),
 
   POSTGRES_URL: z.string().default("postgres://postgres:postgres@localhost:5432/job_agent"),
+  POSTGRES_SSL_MODE: z.enum(["disable", "prefer", "require"]).default("prefer"),
+  POSTGRES_SSL_REJECT_UNAUTHORIZED: BoolFromEnv.default(true),
 
+  REDIS_ENABLED: BoolFromEnv.default(false),
   REDIS_HOST: z.string().default("127.0.0.1"),
   REDIS_PORT: z.coerce.number().default(6379),
   REDIS_PASSWORD: z.string().optional(),
@@ -28,7 +45,7 @@ const EnvSchema = z.object({
   IMAP_PORT: z.coerce.number().default(993),
   IMAP_USER: z.string().optional(),
   IMAP_PASSWORD: z.string().optional(),
-  IMAP_TLS: z.coerce.boolean().default(true),
+  IMAP_TLS: BoolFromEnv.default(true),
 
   DEFAULT_JOB_ROLE: z.string().default("Backend Engineer"),
   DEFAULT_JOB_SKILLS: z.string().default("Node.js,MongoDB,AI"),
@@ -36,3 +53,23 @@ const EnvSchema = z.object({
 });
 
 export const env = EnvSchema.parse(process.env);
+
+function loadEnv(): void {
+  const cwd = process.cwd();
+  const candidates = [".env", ".env.local"];
+  const merged: DotenvParseOutput = {};
+
+  for (const file of candidates) {
+    const envPath = path.join(cwd, file);
+    if (fs.existsSync(envPath)) {
+      const parsed = dotenv.parse(fs.readFileSync(envPath));
+      Object.assign(merged, parsed);
+    }
+  }
+
+  for (const [key, value] of Object.entries(merged)) {
+    if (process.env[key] === undefined) {
+      process.env[key] = value;
+    }
+  }
+}

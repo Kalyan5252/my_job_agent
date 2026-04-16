@@ -56,3 +56,9 @@ npm run dev:cron
 - CAPTCHA/anti-bot flows are handled with fallback + human-in-loop hooks.
 - LLM actions include schema constraints and guard checks before submit.
 - All automation decisions are auditable through structured logs.
+
+## Neon Postgres
+
+- Set `POSTGRES_URL` to your Neon connection string (usually includes `sslmode=require`).
+- Leave `POSTGRES_SSL_MODE=prefer` (default) or set `require` explicitly.
+- Keep `POSTGRES_SSL_REJECT_UNAUTHORIZED=true` for production-safe TLS verification.
