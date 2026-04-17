@@ -19,7 +19,7 @@ Multi-agent backend system that discovers jobs, applies with intelligent form ha
 
 ## Setup
 
-1. Copy `.env.example` to `.env` and fill credentials.
+1. Create/update `.env` in the project root and fill credentials.
 2. Install deps:
 
 ```bash
@@ -56,6 +56,8 @@ npm run dev:cron
 - CAPTCHA/anti-bot flows are handled with fallback + human-in-loop hooks.
 - LLM actions include schema constraints and guard checks before submit.
 - All automation decisions are auditable through structured logs.
+- Optional Groq scraper-assist is supported for HTML extraction (`GROQ_SCRAPER_ENABLED=true`).
+- Recommended pattern: use Groq OSS for extraction assistance and reserve OpenAI GPT-5 models for scoring/decision steps.
 
 ## Neon Postgres
 

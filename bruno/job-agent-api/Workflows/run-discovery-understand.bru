@@ -1,0 +1,30 @@
+meta {
+  name: Run Discovery Understand
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/workflows/discovery/understand
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+  Accept: application/json
+}
+
+body:json {
+  {
+    "role": "Backend Engineer",
+    "skills": ["Node.js", "MongoDB", "AI"],
+    "experience": "fresher",
+    "country": "India",
+    "locations": ["Hyderabad", "Bengaluru", "Pune", "Chennai"],
+    "companyTierOrder": ["top", "mid", "other"],
+    "highPayFirst": true,
+    "minSalaryLpa": 12,
+    "maxResults": 25
+  }
+}
