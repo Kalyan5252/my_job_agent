@@ -59,7 +59,11 @@ const EnvSchema = z.object({
   IMAP_TLS: BoolFromEnv.default(true),
 
   DEFAULT_JOB_ROLE: z.string().default("Backend Engineer"),
-  DEFAULT_JOB_SKILLS: z.string().default("Node.js,MongoDB,AI"),
+  DEFAULT_JOB_SKILLS: z
+    .string()
+    .default(
+      "TypeScript,Node.js,Express.js,MongoDB,PostgreSQL,Redis,AWS,GCP,Docker,GraphQL,RAG,LLM,LangChain,React,Next.js"
+    ),
   DEFAULT_JOB_EXPERIENCE: z.string().default("fresher")
 });
 

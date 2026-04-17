@@ -10,6 +10,8 @@ interface DiscoveryRequestBody extends Partial<JobProfile> {
   locations?: string[];
   country?: string;
   minSalaryLpa?: number;
+  minExperienceYears?: number;
+  maxExperienceYears?: number;
   maxResults?: number;
   companyTierOrder?: CompanyTier[];
   highPayFirst?: boolean;
@@ -120,7 +122,9 @@ function toSearchQuery(body: DiscoveryRequestBody, profile: JobProfile): Partial
     filters: {
       country: body.country,
       locations: body.locations,
-      minSalaryLpa: body.minSalaryLpa
+      minSalaryLpa: body.minSalaryLpa,
+      minExperienceYears: body.minExperienceYears,
+      maxExperienceYears: body.maxExperienceYears
     },
     priority: {
       companyTierOrder: body.companyTierOrder,

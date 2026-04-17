@@ -45,7 +45,19 @@ export class ScraperTool {
       return synthetic.slice(0, query.maxResults ?? 50);
     }
 
-    const prioritized = this.prioritizeJobs(actionable, query);
+    const skillAligned = actionable.filter((job) => this.hasSkillSignal(job, query));
+    const candidates = skillAligned.length > 0 ? skillAligned : actionable;
+    if (skillAligned.length === 0) {
+      this.log("No jobs passed skill-signal filter; falling back to URL-valid candidates");
+    }
+
+    const experienceAligned = candidates.filter((job) => this.matchesExperienceBand(job, query));
+    if (experienceAligned.length === 0) {
+      this.log("No jobs passed strict experience filter (0-2 years)");
+      return [];
+    }
+
+    const prioritized = this.prioritizeJobs(experienceAligned, query);
     if (prioritized.length === 0) {
       if (!env.SCRAPER_ALLOW_SYNTHETIC_FALLBACK) {
         this.log("No jobs left after filters. Synthetic fallback disabled.");
@@ -73,7 +85,9 @@ export class ScraperTool {
           remoteOnly: true,
           postedWithinHours: 24 * 14,
           country: "India",
-          locations: this.defaultIndiaLocations()
+          locations: this.defaultIndiaLocations(),
+          minExperienceYears: 0,
+          maxExperienceYears: 2
         },
         priority: {
           companyTierOrder: ["top", "mid", "other"],
@@ -92,7 +106,10 @@ export class ScraperTool {
         employmentType: input.filters?.employmentType,
         country: input.filters?.country ?? "India",
         locations: input.filters?.locations ?? this.defaultIndiaLocations(),
-        minSalaryLpa: input.filters?.minSalaryLpa
+        minSalaryLpa: input.filters?.minSalaryLpa,
+        // Strict policy: discovery fetch is limited to early-career roles only.
+        minExperienceYears: 0,
+        maxExperienceYears: 2
       },
       priority: {
         companyTierOrder: input.priority?.companyTierOrder ?? ["top", "mid", "other"],
@@ -103,12 +120,18 @@ export class ScraperTool {
 
   // Strategy 1: API scraping (fast + reliable).
   private async fetchFromApis(query: JobSearchQuery): Promise<NormalizedJob[]> {
-    const [remotive, arbeitnow] = await Promise.all([
-      this.scrapeRemotiveApi(query),
-      this.scrapeArbeitnowApi(query)
-    ]);
+    const roles = this.expandRoles(query);
+    const batches = await Promise.all(
+      roles.map(async (role) => {
+        const [remotive, arbeitnow] = await Promise.all([
+          this.scrapeRemotiveApi(query, role),
+          this.scrapeArbeitnowApi(query, role)
+        ]);
+        return [...remotive, ...arbeitnow];
+      })
+    );
 
-    return [...remotive, ...arbeitnow];
+    return batches.flat();
   }
 
   // Strategy 1b: India-focused sources and aggregators.
@@ -118,145 +141,152 @@ export class ScraperTool {
       return [];
     }
 
+    const roles = this.expandRoles(query).slice(0, 4);
     const [adzuna, jsearch, linkedin] = await Promise.all([
-      this.scrapeAdzunaIndiaApi(query),
-      this.scrapeRapidApiJSearch(query),
+      this.scrapeAdzunaIndiaApi(query, roles),
+      this.scrapeRapidApiJSearch(query, roles),
       this.scrapeLinkedInPublic(query)
     ]);
 
     return [...adzuna, ...jsearch, ...linkedin];
   }
 
-  private async scrapeAdzunaIndiaApi(query: JobSearchQuery): Promise<NormalizedJob[]> {
+  private async scrapeAdzunaIndiaApi(query: JobSearchQuery, roles: string[]): Promise<NormalizedJob[]> {
     if (!env.ADZUNA_APP_ID || !env.ADZUNA_APP_KEY) {
       this.log("Adzuna skipped: missing ADZUNA_APP_ID or ADZUNA_APP_KEY");
       return [];
     }
 
-    const where = (query.filters?.locations?.[0] || query.location || "India").trim();
-    const url =
-      `https://api.adzuna.com/v1/api/jobs/in/search/1` +
-      `?app_id=${encodeURIComponent(env.ADZUNA_APP_ID)}` +
-      `&app_key=${encodeURIComponent(env.ADZUNA_APP_KEY)}` +
-      `&results_per_page=50` +
-      `&what=${encodeURIComponent(query.role)}` +
-      `&where=${encodeURIComponent(where)}` +
-      `&content-type=application/json`;
-
-    this.log(`Adzuna request: ${url.replace(env.ADZUNA_APP_KEY, "***")}`);
-    const data = await this.fetchJson<{
-      results?: Array<{
-        id?: string;
-        title?: string;
-        company?: { display_name?: string };
-        location?: { display_name?: string; area?: string[] };
-        description?: string;
-        redirect_url?: string;
-        salary_min?: number;
-        salary_max?: number;
-      }>;
-    }>(url);
-
-    const results = data?.results ?? [];
-    this.log(`Adzuna raw results: ${results.length}`);
     const out: NormalizedJob[] = [];
+    const where = (query.filters?.locations?.[0] || query.location || "India").trim();
 
-    for (const job of results) {
-      if (!job.title || !job.company?.display_name || !job.description || !job.redirect_url) continue;
-      const salaryLpa = this.toLpa(job.salary_min, job.salary_max);
+    for (const role of roles) {
+      const url =
+        `https://api.adzuna.com/v1/api/jobs/in/search/1` +
+        `?app_id=${encodeURIComponent(env.ADZUNA_APP_ID)}` +
+        `&app_key=${encodeURIComponent(env.ADZUNA_APP_KEY)}` +
+        `&results_per_page=50` +
+        `&what=${encodeURIComponent(role)}` +
+        `&where=${encodeURIComponent(where)}` +
+        `&content-type=application/json`;
 
-      out.push({
-        source: "adzuna-india",
-        externalId: `adzuna-${job.id ?? this.slugify(`${job.company.display_name}-${job.title}`)}`,
-        title: job.title,
-        company: job.company.display_name,
-        companyTier: this.inferCompanyTier(job.company.display_name),
-        salaryLpa,
-        location:
-          job.location?.display_name ||
-          (job.location?.area || []).join(", ") ||
-          query.filters?.locations?.[0] ||
-          "India",
-        description: this.cleanText(job.description),
-        requirements: this.inferRequirementsFromText(job.description, query.skills),
-        applyUrl: job.redirect_url,
-        rawData: { strategy: "api", provider: "adzuna", job },
-        strategy: "api"
-      });
+      this.log(`Adzuna request (${role}): ${url.replace(env.ADZUNA_APP_KEY, "***")}`);
+      const data = await this.fetchJson<{
+        results?: Array<{
+          id?: string;
+          title?: string;
+          company?: { display_name?: string };
+          location?: { display_name?: string; area?: string[] };
+          description?: string;
+          redirect_url?: string;
+          salary_min?: number;
+          salary_max?: number;
+        }>;
+      }>(url);
+
+      const results = data?.results ?? [];
+      this.log(`Adzuna raw results (${role}): ${results.length}`);
+
+      for (const job of results) {
+        if (!job.title || !job.company?.display_name || !job.description || !job.redirect_url) continue;
+        const salaryLpa = this.toLpa(job.salary_min, job.salary_max);
+
+        out.push({
+          source: "adzuna-india",
+          externalId: `adzuna-${job.id ?? this.slugify(`${job.company.display_name}-${job.title}`)}`,
+          title: job.title,
+          company: job.company.display_name,
+          companyTier: this.inferCompanyTier(job.company.display_name),
+          salaryLpa,
+          location:
+            job.location?.display_name ||
+            (job.location?.area || []).join(", ") ||
+            query.filters?.locations?.[0] ||
+            "India",
+          description: this.cleanText(job.description),
+          requirements: this.inferRequirementsFromText(job.description, query.skills),
+          applyUrl: job.redirect_url,
+          rawData: { strategy: "api", provider: "adzuna", role, job },
+          strategy: "api"
+        });
+      }
     }
 
     return out;
   }
 
-  private async scrapeRapidApiJSearch(query: JobSearchQuery): Promise<NormalizedJob[]> {
+  private async scrapeRapidApiJSearch(query: JobSearchQuery, roles: string[]): Promise<NormalizedJob[]> {
     if (!env.RAPIDAPI_KEY) {
       this.log("JSearch skipped: missing RAPIDAPI_KEY");
       return [];
     }
 
-    const where = (query.filters?.locations?.[0] || query.location || "India").trim();
-    const requestUrl =
-      `https://${env.RAPIDAPI_HOST}/search` +
-      `?query=${encodeURIComponent(`${query.role} in ${where}`)}` +
-      `&page=1&num_pages=1&country=in&date_posted=all`;
-
-    const res = await this.fetchWithTimeout(requestUrl, 15_000, {
-      "X-RapidAPI-Key": env.RAPIDAPI_KEY,
-      "X-RapidAPI-Host": env.RAPIDAPI_HOST
-    });
-    if (!res) {
-      this.log("JSearch request failed: no response");
-      return [];
-    }
-    if (!res.ok) {
-      this.log(`JSearch request failed: status ${res.status}`);
-      return [];
-    }
-
-    let data: {
-      data?: Array<{
-        job_id?: string;
-        job_title?: string;
-        employer_name?: string;
-        job_city?: string;
-        job_country?: string;
-        job_description?: string;
-        job_apply_link?: string;
-        job_publisher?: string;
-        job_min_salary?: number;
-        job_max_salary?: number;
-      }>;
-    };
-    try {
-      data = (await res.json()) as typeof data;
-    } catch {
-      this.log("JSearch response parse failed");
-      return [];
-    }
-
-    const rows = data?.data ?? [];
-    this.log(`JSearch raw rows: ${rows.length}`);
     const out: NormalizedJob[] = [];
+    const where = (query.filters?.locations?.[0] || query.location || "India").trim();
 
-    for (const row of rows) {
-      if (!row.job_title || !row.employer_name || !row.job_description || !row.job_apply_link) continue;
-      const location = [row.job_city, row.job_country].filter(Boolean).join(", ") || "India";
-      const salaryLpa = this.toLpa(row.job_min_salary, row.job_max_salary);
+    for (const role of roles) {
+      const requestUrl =
+        `https://${env.RAPIDAPI_HOST}/search` +
+        `?query=${encodeURIComponent(`${role} in ${where}`)}` +
+        `&page=1&num_pages=1&country=in&date_posted=all`;
 
-      out.push({
-        source: `jsearch-${(row.job_publisher || "aggregator").toLowerCase()}`,
-        externalId: `jsearch-${row.job_id ?? this.slugify(`${row.employer_name}-${row.job_title}`)}`,
-        title: row.job_title,
-        company: row.employer_name,
-        companyTier: this.inferCompanyTier(row.employer_name),
-        salaryLpa,
-        location,
-        description: this.cleanText(row.job_description),
-        requirements: this.inferRequirementsFromText(row.job_description, query.skills),
-        applyUrl: row.job_apply_link,
-        rawData: { strategy: "api", provider: "jsearch", row },
-        strategy: "api"
+      const res = await this.fetchWithTimeout(requestUrl, 15_000, {
+        "X-RapidAPI-Key": env.RAPIDAPI_KEY,
+        "X-RapidAPI-Host": env.RAPIDAPI_HOST
       });
+      if (!res) {
+        this.log(`JSearch request failed (${role}): no response`);
+        continue;
+      }
+      if (!res.ok) {
+        this.log(`JSearch request failed (${role}): status ${res.status}`);
+        continue;
+      }
+
+      let data: {
+        data?: Array<{
+          job_id?: string;
+          job_title?: string;
+          employer_name?: string;
+          job_city?: string;
+          job_country?: string;
+          job_description?: string;
+          job_apply_link?: string;
+          job_publisher?: string;
+          job_min_salary?: number;
+          job_max_salary?: number;
+        }>;
+      };
+      try {
+        data = (await res.json()) as typeof data;
+      } catch {
+        this.log(`JSearch response parse failed (${role})`);
+        continue;
+      }
+
+      const rows = data?.data ?? [];
+      this.log(`JSearch raw rows (${role}): ${rows.length}`);
+
+      for (const row of rows) {
+        if (!row.job_title || !row.employer_name || !row.job_description || !row.job_apply_link) continue;
+        const location = [row.job_city, row.job_country].filter(Boolean).join(", ") || "India";
+        const salaryLpa = this.toLpa(row.job_min_salary, row.job_max_salary);
+
+        out.push({
+          source: `jsearch-${(row.job_publisher || "aggregator").toLowerCase()}`,
+          externalId: `jsearch-${row.job_id ?? this.slugify(`${row.employer_name}-${row.job_title}`)}`,
+          title: row.job_title,
+          company: row.employer_name,
+          companyTier: this.inferCompanyTier(row.employer_name),
+          salaryLpa,
+          location,
+          description: this.cleanText(row.job_description),
+          requirements: this.inferRequirementsFromText(row.job_description, query.skills),
+          applyUrl: row.job_apply_link,
+          rawData: { strategy: "api", provider: "jsearch", role, row },
+          strategy: "api"
+        });
+      }
     }
 
     return out;
@@ -323,9 +353,9 @@ export class ScraperTool {
     }
   }
 
-  private async scrapeRemotiveApi(query: JobSearchQuery): Promise<NormalizedJob[]> {
-    const url = `https://remotive.com/api/remote-jobs?search=${encodeURIComponent(query.role)}`;
-    this.log(`API request: ${url}`);
+  private async scrapeRemotiveApi(query: JobSearchQuery, role: string): Promise<NormalizedJob[]> {
+    const url = `https://remotive.com/api/remote-jobs?search=${encodeURIComponent(role)}`;
+    this.log(`API request (Remotive, ${role}): ${url}`);
     const data = await this.fetchJson<{
       jobs?: Array<{
         id?: number;
@@ -363,7 +393,7 @@ export class ScraperTool {
     return normalized;
   }
 
-  private async scrapeArbeitnowApi(query: JobSearchQuery): Promise<NormalizedJob[]> {
+  private async scrapeArbeitnowApi(query: JobSearchQuery, role: string): Promise<NormalizedJob[]> {
     const data = await this.fetchJson<{
       data?: Array<{
         slug?: string;
@@ -378,7 +408,7 @@ export class ScraperTool {
     }>("https://www.arbeitnow.com/api/job-board-api");
 
     const allJobs = data?.data ?? [];
-    const roleTokens = this.tokenize(query.role);
+    const roleTokens = this.tokenize(role);
 
     const normalized: NormalizedJob[] = [];
     for (const job of allJobs) {
@@ -738,6 +768,130 @@ export class ScraperTool {
       out.push(value.trim());
     }
     return out;
+  }
+
+  private expandRoles(query: JobSearchQuery): string[] {
+    const base = (query.role || "Backend Engineer").trim();
+    const skills = (query.skills || []).map((s) => s.toLowerCase());
+    const out = new Set<string>([base]);
+
+    out.add("Backend Engineer");
+    out.add("Backend Developer");
+    out.add("Software Engineer");
+    out.add("Full Stack Engineer");
+    out.add("Node.js Developer");
+
+    if (skills.some((s) => s.includes("typescript") || s.includes("javascript"))) {
+      out.add("TypeScript Backend Engineer");
+      out.add("JavaScript Backend Engineer");
+    }
+    if (skills.some((s) => s.includes("aws") || s.includes("gcp") || s.includes("docker"))) {
+      out.add("Cloud Backend Engineer");
+    }
+    if (skills.some((s) => s.includes("llm") || s.includes("rag") || s.includes("langchain") || s.includes("ai"))) {
+      out.add("AI Engineer");
+      out.add("LLM Engineer");
+      out.add("Applied AI Engineer");
+    }
+
+    return [...out].slice(0, 7);
+  }
+
+  private hasSkillSignal(job: JobPosting, query: JobSearchQuery): boolean {
+    const skills = (query.skills || []).map((s) => s.toLowerCase());
+    if (skills.length === 0) return true;
+
+    const haystack = `${job.title} ${job.description} ${(job.requirements || []).join(" ")}`.toLowerCase();
+    const aliases: Record<string, string[]> = {
+      "node.js": ["node.js", "nodejs", "node"],
+      typescript: ["typescript", "ts"],
+      javascript: ["javascript", "js"],
+      mongodb: ["mongodb", "mongo"],
+      postgresql: ["postgresql", "postgres", "psql"],
+      sql: ["sql", "mysql", "postgresql"],
+      redis: ["redis"],
+      aws: ["aws", "amazon web services"],
+      gcp: ["gcp", "google cloud"],
+      docker: ["docker", "container"],
+      "express.js": ["express", "express.js"],
+      next: ["next", "next.js"],
+      react: ["react", "reactjs"],
+      graphql: ["graphql"],
+      rag: ["rag", "retrieval augmented generation"],
+      llm: ["llm", "large language model", "gpt"],
+      langchain: ["langchain"]
+    };
+
+    const signals = skills.flatMap((skill) => aliases[skill] || [skill]);
+    const matched = signals.filter((token) => haystack.includes(token));
+
+    // Require at least 2 matching signals for stronger quality.
+    return new Set(matched).size >= 2;
+  }
+
+  private matchesExperienceBand(job: JobPosting, query: JobSearchQuery): boolean {
+    const minAllowed = query.filters?.minExperienceYears;
+    const maxAllowed = query.filters?.maxExperienceYears;
+    if (minAllowed === undefined && maxAllowed === undefined) return true;
+
+    const text = `${job.title} ${job.description} ${(job.requirements || []).join(" ")}`.toLowerCase();
+    const seniorTitleKeywords = /(senior|staff|principal|lead|sr\.?|sde\s*2|sde\s*3|architect)/i;
+    if (maxAllowed !== undefined && maxAllowed <= 2 && seniorTitleKeywords.test(job.title.toLowerCase())) {
+      return false;
+    }
+
+    const exp = this.extractRequiredExperience(text);
+    if (exp.hasData) {
+      if (maxAllowed !== undefined && exp.min > maxAllowed) return false;
+      if (minAllowed !== undefined && exp.max < minAllowed) return false;
+      return true;
+    }
+
+    // Strict early-career gate when no explicit years are present.
+    if (maxAllowed !== undefined && maxAllowed <= 2) {
+      const earlyKeywords = /(junior|entry[\s-]?level|fresher|intern|internship|graduate|new grad|trainee|associate)/i;
+      if (!earlyKeywords.test(text)) return false;
+    }
+
+    return true;
+  }
+
+  private extractRequiredExperience(text: string): { hasData: boolean; min: number; max: number } {
+    let min = Number.POSITIVE_INFINITY;
+    let max = Number.NEGATIVE_INFINITY;
+    let hasData = false;
+
+    const rangePattern = /(\d{1,2})\s*[-–to]{1,3}\s*(\d{1,2})\s*(?:\+)?\s*(?:years?|yrs?)/gi;
+    let m: RegExpExecArray | null;
+    while ((m = rangePattern.exec(text))) {
+      const a = Number(m[1]);
+      const b = Number(m[2]);
+      if (Number.isNaN(a) || Number.isNaN(b)) continue;
+      min = Math.min(min, Math.min(a, b));
+      max = Math.max(max, Math.max(a, b));
+      hasData = true;
+    }
+
+    const plusPattern = /(\d{1,2})\s*\+\s*(?:years?|yrs?)/gi;
+    while ((m = plusPattern.exec(text))) {
+      const n = Number(m[1]);
+      if (Number.isNaN(n)) continue;
+      min = Math.min(min, n);
+      max = Math.max(max, 99);
+      hasData = true;
+    }
+
+    const plainPattern = /(\d{1,2})\s*(?:years?|yrs?)/gi;
+    while ((m = plainPattern.exec(text))) {
+      const n = Number(m[1]);
+      if (Number.isNaN(n)) continue;
+      min = Math.min(min, n);
+      max = Math.max(max, n);
+      hasData = true;
+    }
+
+    if (!hasData) return { hasData: false, min: 0, max: 0 };
+    return { hasData: true, min, max };
   }
 
   private prioritizeJobs(jobs: JobPosting[], query: JobSearchQuery): JobPosting[] {
