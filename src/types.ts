@@ -10,6 +10,16 @@ export interface JobSearchFilters {
   employmentType?: string[];
   remoteOnly?: boolean;
   postedWithinHours?: number;
+  locations?: string[];
+  country?: string;
+  minSalaryLpa?: number;
+}
+
+export type CompanyTier = "top" | "mid" | "other";
+
+export interface JobSearchPriority {
+  companyTierOrder?: CompanyTier[];
+  highPayFirst?: boolean;
 }
 
 export interface JobSearchQuery {
@@ -17,6 +27,7 @@ export interface JobSearchQuery {
   location?: string;
   skills?: string[];
   filters?: JobSearchFilters;
+  priority?: JobSearchPriority;
   maxResults?: number;
 }
 
@@ -25,6 +36,8 @@ export interface JobPosting {
   externalId: string;
   title: string;
   company: string;
+  companyTier?: CompanyTier;
+  salaryLpa?: number;
   location?: string;
   description: string;
   requirements?: string[];

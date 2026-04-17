@@ -29,10 +29,11 @@ export class LLMService {
       requirements: job.requirements ?? []
     })}\nReturn strict JSON: {"score":number,"reasoning":string}`;
 
-    const res = await this.client.responses.create({
-      model: env.OPENAI_MODEL_JOB_SCORING,
-      input: prompt
-    });
+    const res = await this.createResponseWithFallback(
+      env.OPENAI_MODEL_JOB_SCORING,
+      prompt,
+      "gpt-5.4-mini"
+    );
 
     const text = res.output_text || "";
     const parsed = safeParseJson<{ score: number; reasoning: string }>(text);
@@ -52,10 +53,11 @@ export class LLMService {
     if (!this.client) return score >= 70;
 
     const prompt = `Given score=${score} and reasoning="${reasoning}", decide apply=true/false with strict JSON: {"apply":boolean}`;
-    const res = await this.client.responses.create({
-      model: env.OPENAI_MODEL_JOB_DECISION,
-      input: prompt
-    });
+    const res = await this.createResponseWithFallback(
+      env.OPENAI_MODEL_JOB_DECISION,
+      prompt,
+      "gpt-5.4"
+    );
 
     const parsed = safeParseJson<{ apply: boolean }>(res.output_text || "");
     return parsed?.apply ?? score >= 70;
@@ -75,10 +77,11 @@ export class LLMService {
       context
     )}\nReturn strict JSON object where keys are field names and values are answers.`;
 
-    const res = await this.client.responses.create({
-      model: env.OPENAI_MODEL_FIELD_MAPPING,
-      input: prompt
-    });
+    const res = await this.createResponseWithFallback(
+      env.OPENAI_MODEL_FIELD_MAPPING,
+      prompt,
+      "gpt-5.4-mini"
+    );
 
     const mapped = safeParseJson<Record<string, string>>(res.output_text || "");
     if (!mapped) {
@@ -101,10 +104,11 @@ export class LLMService {
     }
 
     const prompt = `Classify status from email text. Return strict JSON: {"status":"applied|rejected|interview|unknown"}. Text=${emailText}`;
-    const res = await this.client.responses.create({
-      model: env.OPENAI_MODEL_STATUS_CLASSIFICATION,
-      input: prompt
-    });
+    const res = await this.createResponseWithFallback(
+      env.OPENAI_MODEL_STATUS_CLASSIFICATION,
+      prompt,
+      "gpt-5.4-mini"
+    );
     const parsed = safeParseJson<{ status: "applied" | "rejected" | "interview" | "unknown" }>(
       res.output_text || ""
     );
@@ -121,6 +125,47 @@ export class LLMService {
     if (label.includes("github")) return "https://github.com/kalyan";
     if (label.includes("cover") || label.includes("why")) return `I am excited to contribute as a ${role}.`;
     return "N/A";
+  }
+
+  private async createResponseWithFallback(
+    model: string,
+    input: string,
+    fallbackModel: string
+  ): Promise<OpenAI.Responses.Response> {
+    if (!this.client) {
+      throw new Error("OpenAI client is not initialized");
+    }
+
+    const preferredModel = this.normalizeLegacyModel(model, fallbackModel);
+
+    try {
+      return await this.client.responses.create({
+        model: preferredModel,
+        input
+      });
+    } catch (error) {
+      const modelNotFound = this.isModelNotFound(error);
+      if (!modelNotFound || preferredModel === fallbackModel) {
+        throw error;
+      }
+
+      return await this.client.responses.create({
+        model: fallbackModel,
+        input
+      });
+    }
+  }
+
+  private normalizeLegacyModel(model: string, fallbackModel: string): string {
+    if (model === "gpt-5.3") return fallbackModel;
+    if (model === "gpt-5-mini") return "gpt-5.4-mini";
+    return model;
+  }
+
+  private isModelNotFound(error: unknown): boolean {
+    if (!error || typeof error !== "object") return false;
+    const maybe = error as { code?: string; error?: { code?: string } };
+    return maybe.code === "model_not_found" || maybe.error?.code === "model_not_found";
   }
 }
 

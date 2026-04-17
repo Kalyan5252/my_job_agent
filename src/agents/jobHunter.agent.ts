@@ -3,15 +3,22 @@ import { enqueueApplication } from "../queues/apply.queue";
 import { LLMService } from "../services/llm.service";
 import { ScoringService } from "../services/scoring.service";
 import { ScraperTool } from "../tools/scraper.tool";
-import { JobProfile, ScoredJob } from "../types";
+import { JobProfile, JobSearchQuery, ScoredJob } from "../types";
 
 export class JobHunterAgent {
   private readonly scraper = new ScraperTool();
   private readonly llm = new LLMService();
   private readonly scoring = new ScoringService(this.llm);
 
-  async run(profile: JobProfile): Promise<ScoredJob[]> {
-    const jobs = await this.scraper.fetchJobs(profile);
+  async run(profile: JobProfile, searchQuery?: Partial<JobSearchQuery>): Promise<ScoredJob[]> {
+    const jobs = await this.scraper.fetchJobs({
+      role: searchQuery?.role || profile.role,
+      skills: searchQuery?.skills || profile.skills,
+      location: searchQuery?.location,
+      filters: searchQuery?.filters,
+      priority: searchQuery?.priority,
+      maxResults: searchQuery?.maxResults
+    });
     const scored: ScoredJob[] = [];
 
     for (const job of jobs) {
