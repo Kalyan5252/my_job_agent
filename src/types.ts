@@ -13,6 +13,8 @@ export interface JobSearchFilters {
   locations?: string[];
   country?: string;
   minSalaryLpa?: number;
+  minExperienceYears?: number;
+  maxExperienceYears?: number;
 }
 
 export type CompanyTier = "top" | "mid" | "other";
