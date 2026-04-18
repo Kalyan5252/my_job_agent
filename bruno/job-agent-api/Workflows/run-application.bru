@@ -43,7 +43,8 @@ body:json {
       "experience": "junior"
     },
     "options": {
-      "mode": "dry-run"
+      "mode": "dry-run",
+      "preview": true
     }
   }
 }
@@ -136,6 +137,96 @@ example {
               "session_password"
             ],
             "applyUrl": "https://in.linkedin.com/jobs/view/junior-full-stack-developer-at-llama-4306117443?position=8&pageNum=0&refId=QAM9yUzPZ589stJeBu%2BCFQ%3D%3D&trackingId=CL93a%2BzPE9rekm784U0l7g%3D%3D"
+          }
+        }
+      '''
+    }
+  }
+}
+
+example {
+  name: Agent Navigating LinkedIn
+  description: Yeah.. Agent is able to open the application url in linkedin and find the external link to actual application and successfully redirecting to it.
+  
+  request: {
+    url: {{baseUrl}}/workflows/application/run
+    method: POST
+    mode: json
+    headers: {
+      Content-Type: application/json
+      Accept: application/json
+    }
+  
+    body:json: {
+      {
+        "job": {
+          "id": "linkedin-llama-junior-full-stack-developer-bengaluru",
+          "source": "linkedin-public",
+          "title": "Junior Full Stack Developer",
+          "company": "Llama",
+          "location": "Bengaluru, Karnataka, India",
+          "description": "Junior full stack role requiring TypeScript, Node.js, Express.js, MongoDB, PostgreSQL, and Redis.",
+          "requirements": [
+            "TypeScript",
+            "Node.js",
+            "Express.js",
+            "MongoDB",
+            "PostgreSQL",
+            "Redis"
+          ],
+          "applicationUrl": "https://in.linkedin.com/jobs/view/junior-full-stack-developer-at-llama-4306117443?position=8&pageNum=0&refId=QAM9yUzPZ589stJeBu%2BCFQ%3D%3D&trackingId=CL93a%2BzPE9rekm784U0l7g%3D%3D",
+          "score": 88,
+          "apply": true,
+          "reasoning": "Strong match for junior full stack backend-heavy profile"
+        },
+        "profile": {
+          "role": "Junior Full Stack Developer",
+          "skills": ["TypeScript", "Node.js", "Express.js", "MongoDB", "PostgreSQL", "Redis", "Docker", "AWS", "GCP", "GraphQL", "LLM"],
+          "experience": "junior"
+        },
+        "options": {
+          "mode": "dry-run",
+          "preview": true
+        }
+      }
+    }
+  }
+  
+  response: {
+    headers: {
+      content-type: application/json; charset=utf-8
+      content-length: 865
+      date: Sat, 18 Apr 2026 14:20:55 GMT
+      connection: keep-alive
+      keep-alive: timeout=72
+    }
+  
+    status: {
+      code: 200
+      text: OK
+    }
+  
+    body: {
+      type: json
+      content: '''
+        {
+          "success": true,
+          "mode": "dry-run",
+          "result": {
+            "status": "draft_filled",
+            "message": "Form filled successfully in dry-run mode",
+            "stage": "done",
+            "filledCount": 0,
+            "requiredFieldCount": 0,
+            "missingSelectors": [
+              "field"
+            ],
+            "applyUrl": "https://in.linkedin.com/jobs/view/junior-full-stack-developer-at-llama-4306117443?position=8&pageNum=0&refId=QAM9yUzPZ589stJeBu%2BCFQ%3D%3D&trackingId=CL93a%2BzPE9rekm784U0l7g%3D%3D",
+            "targetUrl": "https://cutshort.io/job/Junior-Full-Stack-Developer-Bengaluru-Bangalore-Llama-fXwxD9bY?utm_source=linkedin-feed&utm_medium=xml&utm_content=job-posting&applicationsource=linkedin-feed",
+            "previewScreenshots": [
+              "/Users/kalyan/Desktop/MY FILES/Full Stack development/my_job_agent/.preview/external-opened-2026-04-18T14-20-54-367Z.png",
+              "/Users/kalyan/Desktop/MY FILES/Full Stack development/my_job_agent/.preview/external-filled-2026-04-18T14-20-54-683Z.png"
+            ]
           }
         }
       '''

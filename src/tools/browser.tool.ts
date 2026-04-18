@@ -7,6 +7,8 @@ import { FieldAnswer, FormField } from "../types";
 interface FillFormResult {
   filledCount: number;
   missingSelectors: string[];
+  targetUrl?: string;
+  previewScreenshots?: string[];
 }
 
 interface SubmitResult {
@@ -29,11 +31,13 @@ interface NoFieldsDiagnosis {
 interface PageRunOptions {
   headless?: boolean;
   useLinkedInAuth?: boolean;
+  preview?: boolean;
 }
 
 export class BrowserTool {
   async withPage<T>(url: string, action: (page: Page) => Promise<T>, options: PageRunOptions = {}): Promise<T> {
-    const browser = await chromium.launch({ headless: options.headless ?? true });
+    const preview = options.preview ?? false;
+    const browser = await chromium.launch({ headless: preview ? false : (options.headless ?? true), slowMo: preview ? 120 : 0 });
     const context = await browser.newContext(this.resolveContextOptions(url, options));
     const page = await context.newPage();
 
@@ -47,7 +51,7 @@ export class BrowserTool {
     }
   }
 
-  async extractFormFields(url: string): Promise<FormField[]> {
+  async extractFormFields(url: string, options: { preview?: boolean } = {}): Promise<FormField[]> {
     return this.withPage(
       url,
       async (page) => {
@@ -59,15 +63,21 @@ export class BrowserTool {
             const modalFields = await this.extractFieldsFromLocator(page.locator('[role="dialog"]').last());
             if (modalFields.length > 0) return modalFields;
           }
+
+          const externalPage = await this.openLinkedInExternalApply(page);
+          if (externalPage) {
+            await externalPage.waitForTimeout(1_000);
+            return this.extractFieldsFromPage(externalPage);
+          }
         }
 
         return this.extractFieldsFromPage(page);
       },
-      { useLinkedInAuth: this.isLinkedIn(url) }
+      { useLinkedInAuth: this.isLinkedIn(url), preview: options.preview }
     );
   }
 
-  async diagnoseNoFields(url: string): Promise<NoFieldsDiagnosis> {
+  async diagnoseNoFields(url: string, options: { preview?: boolean } = {}): Promise<NoFieldsDiagnosis> {
     return this.withPage(
       url,
       async (page) => {
@@ -130,46 +140,88 @@ export class BrowserTool {
           hint: "Page structure may be dynamic/unsupported. Needs human-assisted flow."
         };
       },
-      { useLinkedInAuth: this.isLinkedIn(url) }
+      { useLinkedInAuth: this.isLinkedIn(url), preview: options.preview }
     );
   }
 
-  async fillForm(url: string, answers: FieldAnswer[]): Promise<FillFormResult> {
+  async fillForm(url: string, answers: FieldAnswer[], options: { preview?: boolean } = {}): Promise<FillFormResult> {
     return this.withPage(
       url,
       async (page) => {
+        const previews: string[] = [];
         if (this.isLinkedIn(url) && this.shouldUseLinkedInAuth()) {
           const opened = await this.openLinkedInEasyApplyModal(page);
           if (opened) {
-            return this.processLinkedInEasyApplyFlow(page, answers, false);
+            const result = await this.processLinkedInEasyApplyFlow(page, answers, false);
+            return { ...result, previewScreenshots: previews };
+          }
+
+          const externalPage = await this.openLinkedInExternalApply(page);
+          if (externalPage) {
+            if (options.preview) previews.push(await this.capturePreview(externalPage, "external-opened"));
+            const fill = await this.fillAnswersOnPage(externalPage, answers);
+            if (options.preview) previews.push(await this.capturePreview(externalPage, "external-filled"));
+            return {
+              ...fill,
+              targetUrl: externalPage.url(),
+              previewScreenshots: previews.filter(Boolean)
+            };
           }
         }
-        return this.fillAnswersOnPage(page, answers);
+
+        const fill = await this.fillAnswersOnPage(page, answers);
+        if (options.preview) previews.push(await this.capturePreview(page, "filled"));
+        return { ...fill, targetUrl: page.url(), previewScreenshots: previews.filter(Boolean) };
       },
-      { useLinkedInAuth: this.isLinkedIn(url) }
+      { useLinkedInAuth: this.isLinkedIn(url), preview: options.preview }
     );
   }
 
-  async fillAndSubmitForm(url: string, answers: FieldAnswer[]): Promise<FillFormResult & SubmitResult> {
+  async fillAndSubmitForm(
+    url: string,
+    answers: FieldAnswer[],
+    options: { preview?: boolean } = {}
+  ): Promise<FillFormResult & SubmitResult> {
     return this.withPage(
       url,
       async (page) => {
+        const previews: string[] = [];
         if (this.isLinkedIn(url) && this.shouldUseLinkedInAuth()) {
           const opened = await this.openLinkedInEasyApplyModal(page);
           if (opened) {
-            return this.processLinkedInEasyApplyFlow(page, answers, true);
+            const result = await this.processLinkedInEasyApplyFlow(page, answers, true);
+            return { ...result, targetUrl: page.url(), previewScreenshots: previews };
+          }
+
+          const externalPage = await this.openLinkedInExternalApply(page);
+          if (externalPage) {
+            if (options.preview) previews.push(await this.capturePreview(externalPage, "external-opened"));
+            const fill = await this.fillAnswersOnPage(externalPage, answers);
+            if (options.preview) previews.push(await this.capturePreview(externalPage, "external-filled"));
+            const submit = await this.trySubmit(externalPage);
+            if (options.preview) previews.push(await this.capturePreview(externalPage, "external-submitted"));
+            return {
+              ...fill,
+              submitted: submit.submitted,
+              reason: submit.reason,
+              targetUrl: externalPage.url(),
+              previewScreenshots: previews.filter(Boolean)
+            };
           }
         }
 
         const fill = await this.fillAnswersOnPage(page, answers);
         const submit = await this.trySubmit(page);
+        if (options.preview) previews.push(await this.capturePreview(page, "submitted"));
         return {
           ...fill,
           submitted: submit.submitted,
-          reason: submit.reason
+          reason: submit.reason,
+          targetUrl: page.url(),
+          previewScreenshots: previews.filter(Boolean)
         };
       },
-      { useLinkedInAuth: this.isLinkedIn(url) }
+      { useLinkedInAuth: this.isLinkedIn(url), preview: options.preview }
     );
   }
 
@@ -279,8 +331,8 @@ export class BrowserTool {
     const hasModal = (await modal.count()) > 0;
 
     for (const answer of answers) {
-      const escaped = this.escapeForSelector(answer.fieldName);
-      const selector = `[name="${escaped}"], #${escaped}`;
+      const escaped = this.escapeForAttributeSelector(answer.fieldName);
+      const selector = `[name="${escaped}"], [id="${escaped}"]`;
 
       let target = hasModal ? modal.locator(selector).first() : page.locator(selector).first();
       if (!(await target.count()) && hasModal) {
@@ -432,6 +484,44 @@ export class BrowserTool {
     return false;
   }
 
+  private async openLinkedInExternalApply(page: Page): Promise<Page | null> {
+    const context = page.context();
+    const original = page.url();
+    const buttons = [
+      'a:has-text("Apply")',
+      'button:has-text("Apply")',
+      'a[aria-label*="Apply"]',
+      'button[aria-label*="Apply"]'
+    ];
+
+    for (const selector of buttons) {
+      const control = page.locator(selector).first();
+      if (!(await control.count())) continue;
+
+      try {
+        const popupPromise = context.waitForEvent("page", { timeout: 4_000 }).catch(() => null);
+        await control.click({ timeout: 5_000 });
+        const popup = await popupPromise;
+        if (popup) {
+          await popup.waitForLoadState("domcontentloaded");
+          const popupUrl = popup.url().toLowerCase();
+          if (!popupUrl.includes("linkedin.com")) return popup;
+          await popup.close().catch(() => undefined);
+        }
+
+        await page.waitForTimeout(1_500);
+        const current = page.url().toLowerCase();
+        if (!current.includes("linkedin.com") && current !== original.toLowerCase()) {
+          return page;
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    return null;
+  }
+
   private async trySubmit(page: Page): Promise<SubmitResult> {
     const beforeUrl = page.url();
     const submitCandidates = [
@@ -473,6 +563,15 @@ export class BrowserTool {
     return { submitted: false, reason: "No submit control detected on page" };
   }
 
+  private async capturePreview(page: Page, label: string): Promise<string> {
+    const ts = new Date().toISOString().replace(/[:.]/g, "-");
+    const dir = path.resolve(process.cwd(), ".preview");
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, `${label}-${ts}.png`);
+    await page.screenshot({ path: file, fullPage: true });
+    return file;
+  }
+
   private resolveContextOptions(url: string, options: PageRunOptions): { storageState?: string } {
     if (!options.useLinkedInAuth || !this.isLinkedIn(url)) return {};
     if (!this.shouldUseLinkedInAuth()) return {};
@@ -494,7 +593,7 @@ export class BrowserTool {
     return url.toLowerCase().includes("linkedin.com");
   }
 
-  private escapeForSelector(value: string): string {
+  private escapeForAttributeSelector(value: string): string {
     return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
   }
 }
