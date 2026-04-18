@@ -3,7 +3,8 @@ import { env } from "./config/env";
 import { DiscoveryWorkflow } from "./workflows/discovery.workflow";
 import { TrackingWorkflow } from "./workflows/tracking.workflow";
 import { ApplyWorkflow } from "./workflows/apply.workflow";
-import { CompanyTier, JobProfile, JobSearchQuery, ScoredJob } from "./types";
+import { BrowserTool } from "./tools/browser.tool";
+import { ApplicationRunOptions, CompanyTier, JobProfile, JobSearchQuery, ScoredJob } from "./types";
 
 interface DiscoveryRequestBody extends Partial<JobProfile> {
   location?: string;
@@ -49,13 +50,29 @@ interface DetailedDiscoveryJob {
   faqs: JobFaq[];
 }
 
+interface ApplicationRequestBody {
+  job: Partial<ScoredJob> & {
+    id?: string;
+    applicationUrl?: string;
+    application?: { url?: string };
+  };
+  profile?: Partial<JobProfile>;
+  options?: ApplicationRunOptions;
+}
+
 export function createApp() {
   const app = Fastify({ logger: { level: env.LOG_LEVEL } });
   const discovery = new DiscoveryWorkflow();
   const tracking = new TrackingWorkflow();
   const apply = new ApplyWorkflow();
+  const browser = new BrowserTool();
 
   app.get("/health", async () => ({ ok: true, service: "job-agent", at: new Date().toISOString() }));
+  app.get("/auth/linkedin/status", async () => ({
+    enabled: env.LINKEDIN_AUTH_ENABLED,
+    storageStatePath: env.LINKEDIN_STORAGE_STATE_PATH,
+    sessionFound: browser.hasLinkedInAuthState()
+  }));
 
   app.post<{ Body: DiscoveryRequestBody }>("/workflows/discovery/run", async (request) => {
     const profile = toProfile(request.body);
@@ -97,9 +114,29 @@ export function createApp() {
 
   app.post("/workflows/tracking/run", async () => tracking.run());
 
-  app.post<{ Body: { job: ScoredJob; profile: JobProfile } }>("/workflows/application/run", async (request) => {
-    await apply.run(request.body);
-    return { success: true };
+  app.post<{ Body: ApplicationRequestBody }>("/workflows/application/run", async (request, reply) => {
+    const body = request.body || ({} as ApplicationRequestBody);
+    const normalizedJob = toApplicationJob(body.job);
+    if (!normalizedJob.applyUrl) {
+      return reply.code(400).send({
+        statusCode: 400,
+        error: "Bad Request",
+        message: "job.applyUrl (or job.applicationUrl/application.url) is required"
+      });
+    }
+
+    const normalizedProfile = toApplicationProfile(body.profile);
+    const result = await apply.run({
+      job: normalizedJob,
+      profile: normalizedProfile,
+      options: body.options
+    });
+
+    return {
+      success: result.status === "applied" || result.status === "draft_filled",
+      mode: body.options?.mode ?? "dry-run",
+      result
+    };
   });
 
   return app;
@@ -130,6 +167,34 @@ function toSearchQuery(body: DiscoveryRequestBody, profile: JobProfile): Partial
       companyTierOrder: body.companyTierOrder,
       highPayFirst: body.highPayFirst
     }
+  };
+}
+
+function toApplicationProfile(profile?: Partial<JobProfile>): JobProfile {
+  return {
+    role: profile?.role || env.DEFAULT_JOB_ROLE,
+    skills: profile?.skills || env.DEFAULT_JOB_SKILLS.split(",").map((s) => s.trim()),
+    experience: profile?.experience || env.DEFAULT_JOB_EXPERIENCE
+  };
+}
+
+function toApplicationJob(input: ApplicationRequestBody["job"]): ScoredJob {
+  const fallbackUrl = input?.applyUrl || input?.applicationUrl || input?.application?.url;
+  return {
+    source: input?.source || "direct-input",
+    externalId: input?.externalId || input?.id || `manual-${Date.now()}`,
+    title: input?.title || "Unknown Role",
+    company: input?.company || "Unknown Company",
+    location: input?.location,
+    description: input?.description || "",
+    requirements: input?.requirements || [],
+    applyUrl: fallbackUrl,
+    rawData: input?.rawData,
+    companyTier: input?.companyTier,
+    salaryLpa: input?.salaryLpa,
+    score: input?.score ?? 0,
+    apply: input?.apply ?? true,
+    reasoning: input?.reasoning
   };
 }
 

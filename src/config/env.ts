@@ -39,6 +39,8 @@ const EnvSchema = z.object({
   RAPIDAPI_KEY: z.string().optional(),
   RAPIDAPI_HOST: z.string().default("jsearch.p.rapidapi.com"),
   LINKEDIN_SCRAPER_ENABLED: BoolFromEnv.default(false),
+  LINKEDIN_AUTH_ENABLED: BoolFromEnv.default(true),
+  LINKEDIN_STORAGE_STATE_PATH: z.string().default(".auth/linkedin-storage-state.json"),
 
   MONGODB_URI: z.string().default("mongodb://localhost:27017"),
   MONGODB_DB_NAME: z.string().default("job_agent"),
