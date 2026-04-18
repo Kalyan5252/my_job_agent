@@ -91,6 +91,7 @@ export interface FieldAnswer {
 
 export interface ApplicationRunOptions {
   mode?: "dry-run" | "submit";
+  preview?: boolean;
 }
 
 export interface ApplicationRunResult {
@@ -103,4 +104,6 @@ export interface ApplicationRunResult {
   missingRequiredFields?: string[];
   missingSelectors?: string[];
   applyUrl?: string;
+  targetUrl?: string;
+  previewScreenshots?: string[];
 }

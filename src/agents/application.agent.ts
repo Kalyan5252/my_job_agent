@@ -20,7 +20,7 @@ export class ApplicationAgent {
     this.log(`start job=${job.externalId} source=${job.source} mode=${mode}`);
 
     if (!job.applyUrl) {
-      await this.upsertApplication(job, "failed", "Missing apply URL");
+      await this.safeUpsertApplication(job, "failed", "Missing apply URL");
       this.log(`failed job=${job.externalId} reason=missing_apply_url`);
       return {
         status: "failed",
@@ -29,14 +29,14 @@ export class ApplicationAgent {
       };
     }
 
-    await this.upsertApplication(job, "in_progress", `Started application in mode=${mode}`);
+    await this.safeUpsertApplication(job, "in_progress", `Started application in mode=${mode}`);
 
     try {
-      let fields = await this.browser.extractFormFields(job.applyUrl);
+      let fields = await this.browser.extractFormFields(job.applyUrl, { preview: options.preview });
       if (fields.length === 0 && this.isLinkedIn(job.applyUrl)) {
         this.log(`extract retry job=${job.externalId} reason=zero_fields`);
         await this.sleep(1200);
-        fields = await this.browser.extractFormFields(job.applyUrl);
+        fields = await this.browser.extractFormFields(job.applyUrl, { preview: options.preview });
       }
       this.log(`extract job=${job.externalId} fields=${fields.length}`);
       if (fields.length === 0) {
@@ -44,7 +44,7 @@ export class ApplicationAgent {
         if (authState === "missing_auth") {
           const reason = "LinkedIn authenticated session missing";
           const note = `${reason}. Run npm run auth:linkedin`;
-          await this.upsertApplication(job, "needs_human", note);
+          await this.safeUpsertApplication(job, "needs_human", note);
           return {
             status: "needs_human",
             message: reason,
@@ -56,7 +56,7 @@ export class ApplicationAgent {
         if (authState === "expired") {
           const reason = "LinkedIn session expired";
           const note = `${reason}. Refresh with npm run auth:linkedin`;
-          await this.upsertApplication(job, "needs_human", note);
+          await this.safeUpsertApplication(job, "needs_human", note);
           return {
             status: "needs_human",
             message: reason,
@@ -66,9 +66,9 @@ export class ApplicationAgent {
           };
         }
 
-        const diagnosis = await this.browser.diagnoseNoFields(job.applyUrl);
+        const diagnosis = await this.browser.diagnoseNoFields(job.applyUrl, { preview: options.preview });
         const note = diagnosis.hint ? `${diagnosis.reason}. ${diagnosis.hint}` : diagnosis.reason;
-        await this.upsertApplication(job, "needs_human", note);
+        await this.safeUpsertApplication(job, "needs_human", note);
         this.log(`needs_human job=${job.externalId} reason=no_fields diagnosis="${diagnosis.reason}"`);
         return {
           status: "needs_human",
@@ -80,7 +80,7 @@ export class ApplicationAgent {
       }
       if (this.looksLikeAuthWall(fields, job.applyUrl)) {
         const reason = "Login/auth wall detected instead of application form";
-        await this.upsertApplication(job, "needs_human", reason);
+        await this.safeUpsertApplication(job, "needs_human", reason);
         this.log(`needs_human job=${job.externalId} reason=auth_wall`);
         return {
           status: "needs_human",
@@ -100,7 +100,7 @@ export class ApplicationAgent {
         .filter(Boolean))];
 
       if (!validation.valid) {
-        await this.upsertApplication(job, "needs_human", validation.errors.join("; "));
+        await this.safeUpsertApplication(job, "needs_human", validation.errors.join("; "));
         this.log(`needs_human job=${job.externalId} reason=validation_failed`);
         return {
           status: "needs_human",
@@ -114,12 +114,14 @@ export class ApplicationAgent {
       }
 
       if (mode === "submit") {
-        const submitResult = await this.browser.fillAndSubmitForm(job.applyUrl, answers);
+        const submitResult = await this.browser.fillAndSubmitForm(job.applyUrl, answers, {
+          preview: options.preview
+        });
         this.log(
           `submit job=${job.externalId} submitted=${submitResult.submitted} filled=${submitResult.filledCount}`
         );
         if (!submitResult.submitted) {
-          await this.upsertApplication(job, "needs_human", submitResult.reason);
+          await this.safeUpsertApplication(job, "needs_human", submitResult.reason);
           this.log(`needs_human job=${job.externalId} reason=${submitResult.reason}`);
           return {
             status: "needs_human",
@@ -129,11 +131,13 @@ export class ApplicationAgent {
             filledCount: submitResult.filledCount,
             requiredFieldCount: fields.filter((f) => f.required).length,
             missingSelectors: submitResult.missingSelectors,
-            applyUrl: job.applyUrl
+            applyUrl: job.applyUrl,
+            targetUrl: submitResult.targetUrl,
+            previewScreenshots: submitResult.previewScreenshots
           };
         }
 
-        await this.upsertApplication(job, "applied", submitResult.reason);
+        await this.safeUpsertApplication(job, "applied", submitResult.reason);
         this.log(`applied job=${job.externalId} reason=${submitResult.reason}`);
         return {
           status: "applied",
@@ -142,12 +146,14 @@ export class ApplicationAgent {
           filledCount: submitResult.filledCount,
           requiredFieldCount: fields.filter((f) => f.required).length,
           missingSelectors: submitResult.missingSelectors,
-          applyUrl: job.applyUrl
+          applyUrl: job.applyUrl,
+          targetUrl: submitResult.targetUrl,
+          previewScreenshots: submitResult.previewScreenshots
         };
       }
 
-      const fillResult = await this.browser.fillForm(job.applyUrl, answers);
-      await this.upsertApplication(job, "draft_filled", "Form filled in dry-run mode (not submitted)");
+      const fillResult = await this.browser.fillForm(job.applyUrl, answers, { preview: options.preview });
+      await this.safeUpsertApplication(job, "draft_filled", "Form filled in dry-run mode (not submitted)");
       this.log(`draft_filled job=${job.externalId} filled=${fillResult.filledCount}`);
       return {
         status: "draft_filled",
@@ -156,11 +162,13 @@ export class ApplicationAgent {
         filledCount: fillResult.filledCount,
         requiredFieldCount: fields.filter((f) => f.required).length,
         missingSelectors: fillResult.missingSelectors,
-        applyUrl: job.applyUrl
+        applyUrl: job.applyUrl,
+        targetUrl: fillResult.targetUrl,
+        previewScreenshots: fillResult.previewScreenshots
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown failure";
-      await this.upsertApplication(job, "failed", message);
+      await this.safeUpsertApplication(job, "failed", message);
       this.log(`failed job=${job.externalId} reason=${message}`);
       return {
         status: "failed",
@@ -188,6 +196,19 @@ export class ApplicationAgent {
       `,
       [job.externalId, job.source, job.company, job.title, status, notes || null]
     );
+  }
+
+  private async safeUpsertApplication(
+    job: ScoredJob,
+    status: "in_progress" | "draft_filled" | "needs_human" | "applied" | "failed",
+    notes?: string
+  ): Promise<void> {
+    try {
+      await this.upsertApplication(job, status, notes);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "unknown db error";
+      this.log(`db_upsert_failed job=${job.externalId} status=${status} reason=${message}`);
+    }
   }
 
   private log(message: string): void {
