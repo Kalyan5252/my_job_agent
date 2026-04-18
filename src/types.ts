@@ -55,6 +55,9 @@ export interface ScoredJob extends JobPosting {
 
 export type ApplicationStatus =
   | "queued"
+  | "in_progress"
+  | "draft_filled"
+  | "needs_human"
   | "applied"
   | "rejected"
   | "interview"
@@ -84,4 +87,20 @@ export interface FormField {
 export interface FieldAnswer {
   fieldName: string;
   value: string;
+}
+
+export interface ApplicationRunOptions {
+  mode?: "dry-run" | "submit";
+}
+
+export interface ApplicationRunResult {
+  status: ApplicationStatus;
+  message: string;
+  errorCode?: string;
+  stage: "precheck" | "extract" | "map" | "validate" | "fill" | "submit" | "done";
+  filledCount?: number;
+  requiredFieldCount?: number;
+  missingRequiredFields?: string[];
+  missingSelectors?: string[];
+  applyUrl?: string;
 }

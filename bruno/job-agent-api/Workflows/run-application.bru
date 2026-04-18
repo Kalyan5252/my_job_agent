@@ -18,25 +18,127 @@ headers {
 body:json {
   {
     "job": {
-      "source": "demo",
-      "externalId": "demo-1",
-      "title": "Backend Engineer - Node.js",
-      "company": "Acme Labs",
-      "location": "Remote",
-      "description": "Build backend services using Node.js, MongoDB, and AI tooling.",
-      "requirements": ["Node.js", "MongoDB", "REST APIs", "AI integration"],
-      "applyUrl": "https://example.com/apply/demo-1",
-      "rawData": {
-        "provider": "seed"
-      },
-      "score": 82,
+      "id": "linkedin-llama-junior-full-stack-developer-bengaluru",
+      "source": "linkedin-public",
+      "title": "Junior Full Stack Developer",
+      "company": "Llama",
+      "location": "Bengaluru, Karnataka, India",
+      "description": "Junior full stack role requiring TypeScript, Node.js, Express.js, MongoDB, PostgreSQL, and Redis.",
+      "requirements": [
+        "TypeScript",
+        "Node.js",
+        "Express.js",
+        "MongoDB",
+        "PostgreSQL",
+        "Redis"
+      ],
+      "applicationUrl": "https://in.linkedin.com/jobs/view/junior-full-stack-developer-at-llama-4306117443?position=8&pageNum=0&refId=QAM9yUzPZ589stJeBu%2BCFQ%3D%3D&trackingId=CL93a%2BzPE9rekm784U0l7g%3D%3D",
+      "score": 88,
       "apply": true,
-      "reasoning": "Strong match for required backend and AI skills"
+      "reasoning": "Strong match for junior full stack backend-heavy profile"
     },
     "profile": {
-      "role": "Backend Engineer",
-      "skills": ["Node.js", "MongoDB", "AI"],
-      "experience": "fresher"
+      "role": "Junior Full Stack Developer",
+      "skills": ["TypeScript", "Node.js", "Express.js", "MongoDB", "PostgreSQL", "Redis", "Docker", "AWS", "GCP", "GraphQL", "LLM"],
+      "experience": "junior"
+    },
+    "options": {
+      "mode": "dry-run"
+    }
+  }
+}
+
+example {
+  name: Applicatino Ref
+  
+  request: {
+    url: {{baseUrl}}/workflows/application/run
+    method: POST
+    mode: json
+    headers: {
+      Content-Type: application/json
+      Accept: application/json
+    }
+  
+    body:json: {
+      {
+        "job": {
+          "id": "linkedin-llama-junior-full-stack-developer-bengaluru",
+          "source": "linkedin-public",
+          "title": "Junior Full Stack Developer",
+          "company": "Llama",
+          "location": "Bengaluru, Karnataka, India",
+          "description": "Junior full stack role requiring TypeScript, Node.js, Express.js, MongoDB, PostgreSQL, and Redis.",
+          "requirements": [
+            "TypeScript",
+            "Node.js",
+            "Express.js",
+            "MongoDB",
+            "PostgreSQL",
+            "Redis"
+          ],
+          "applicationUrl": "https://in.linkedin.com/jobs/view/junior-full-stack-developer-at-llama-4306117443?position=8&pageNum=0&refId=QAM9yUzPZ589stJeBu%2BCFQ%3D%3D&trackingId=CL93a%2BzPE9rekm784U0l7g%3D%3D",
+          "score": 88,
+          "apply": true,
+          "reasoning": "Strong match for junior full stack backend-heavy profile"
+        },
+        "profile": {
+          "role": "Junior Full Stack Developer",
+          "skills": ["TypeScript", "Node.js", "Express.js", "MongoDB", "PostgreSQL", "Redis", "Docker", "AWS", "GCP", "GraphQL", "LLM"],
+          "experience": "junior"
+        },
+        "options": {
+          "mode": "dry-run"
+        }
+      }
+    }
+  }
+  
+  response: {
+    headers: {
+      content-type: application/json; charset=utf-8
+      content-length: 613
+      date: Fri, 17 Apr 2026 22:47:28 GMT
+      connection: keep-alive
+      keep-alive: timeout=72
+    }
+  
+    status: {
+      code: 200
+      text: OK
+    }
+  
+    body: {
+      type: json
+      content: '''
+        {
+          "success": false,
+          "mode": "dry-run",
+          "result": {
+            "status": "needs_human",
+            "message": "Validation failed for required fields",
+            "stage": "validate",
+            "requiredFieldCount": 14,
+            "missingRequiredFields": [
+              "session_key",
+              "session_password",
+              "session_key",
+              "session_password",
+              "session_key",
+              "session_password",
+              "session_key",
+              "session_password",
+              "session_key",
+              "session_password",
+              "session_key",
+              "session_password",
+              "session_key",
+              "session_password"
+            ],
+            "applyUrl": "https://in.linkedin.com/jobs/view/junior-full-stack-developer-at-llama-4306117443?position=8&pageNum=0&refId=QAM9yUzPZ589stJeBu%2BCFQ%3D%3D&trackingId=CL93a%2BzPE9rekm784U0l7g%3D%3D"
+          }
+        }
+      '''
     }
   }
 }
