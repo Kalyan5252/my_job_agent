@@ -1,0 +1,66 @@
+meta {
+  name: Test PSE /run
+  type: http
+  seq: 3
+}
+
+post {
+  url: http://localhost:3000/workflows/application/run
+  body: json
+  auth: inherit
+}
+
+headers {
+  accept: application/json
+  content-type: application/json
+}
+
+body:json {
+  {
+    "job": {
+      "id": "linkedin-4381439574",
+      "source": "linkedin-public",
+      "title": "LinkedIn Job 4381439574",
+      "company": "Unknown (from LinkedIn URL)",
+      "location": "India",
+      "description": "Application run target from direct LinkedIn URL.",
+      "requirements": [
+        "TypeScript",
+        "Node.js",
+        "Express.js",
+        "MongoDB",
+        "PostgreSQL"
+      ],
+      "applicationUrl": "https://www.linkedin.com/jobs/view/4381439574/?eBP=BUDGET_EXHAUSTED_JOB&trk=flagship3_jobs_discovery_jymbii&refId=cCDShN0prd6oCYghZwQt%2BQ%3D%3D&trackingId=tjy8JvIJ27BV8YdyQijhhQ%3D%3D",
+      "score": 80,
+      "apply": true,
+      "reasoning": "Direct LinkedIn URL provided by user for apply workflow testing."
+    },
+    "profile": {
+      "role": "Backend Engineer",
+      "skills": [
+        "TypeScript",
+        "Node.js",
+        "Express.js",
+        "MongoDB",
+        "PostgreSQL",
+        "Redis",
+        "AWS",
+        "Docker",
+        "GraphQL",
+        "LLM",
+        "RAG"
+      ],
+      "experience": "junior"
+    },
+    "options": {
+      "mode": "dry-run",
+      "preview": true
+    }
+  }
+}
+
+settings {
+  encodeUrl: false
+  timeout: 0
+}

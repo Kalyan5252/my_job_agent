@@ -92,12 +92,29 @@ export interface FieldAnswer {
 export interface ApplicationRunOptions {
   mode?: "dry-run" | "submit";
   preview?: boolean;
+  authMode?: "auto" | "google" | "linkedin";
+  captchaHandoff?: boolean;
+  captchaHandoffTimeoutMs?: number;
+  keepBrowserOpenAfterSubmit?: boolean;
+  keepBrowserOpenMs?: number;
 }
 
 export interface ApplicationRunResult {
   status: ApplicationStatus;
   message: string;
-  errorCode?: string;
+  errorCode?:
+    | "LINKEDIN_AUTH_NOT_CONFIGURED"
+    | "LINKEDIN_SESSION_EXPIRED"
+    | "GOOGLE_AUTH_NOT_CONFIGURED"
+    | "GOOGLE_SESSION_EXPIRED"
+    | "GOOGLE_AUTH_REQUIRED"
+    | "CAPTCHA_BLOCKED"
+    | "LINKEDIN_MODAL_NOT_OPENED"
+    | "EXTERNAL_APPLY_REDIRECT"
+    | "NO_FORM_FIELDS"
+    | "FORM_VALIDATION_FAILED"
+    | "SUBMIT_NOT_CONFIRMED"
+    | "UNKNOWN";
   stage: "precheck" | "extract" | "map" | "validate" | "fill" | "submit" | "done";
   filledCount?: number;
   requiredFieldCount?: number;
