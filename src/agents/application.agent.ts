@@ -16,8 +16,16 @@ export class ApplicationAgent {
     profile: JobProfile,
     options: ApplicationRunOptions = {}
   ): Promise<ApplicationRunResult> {
+    const authMode = options.authMode ?? "auto";
+    const hydratedProfile = this.resumeService.hydrateProfile(profile);
     const mode = options.mode ?? "dry-run";
-    this.log(`start job=${job.externalId} source=${job.source} mode=${mode}`);
+    const captchaHandoff = options.captchaHandoff ?? mode === "submit";
+    const captchaHandoffTimeoutMs = options.captchaHandoffTimeoutMs ?? 180_000;
+    const keepBrowserOpenAfterSubmit = options.keepBrowserOpenAfterSubmit ?? (mode === "submit" && Boolean(options.preview));
+    const keepBrowserOpenMs = options.keepBrowserOpenMs ?? 180_000;
+    this.log(
+      `start job=${job.externalId} source=${job.source} mode=${mode} authMode=${authMode} captchaHandoff=${captchaHandoff} keepOpen=${keepBrowserOpenAfterSubmit}`
+    );
 
     if (!job.applyUrl) {
       await this.safeUpsertApplication(job, "failed", "Missing apply URL");
@@ -32,16 +40,132 @@ export class ApplicationAgent {
     await this.safeUpsertApplication(job, "in_progress", `Started application in mode=${mode}`);
 
     try {
-      let fields = await this.browser.extractFormFields(job.applyUrl, { preview: options.preview });
+      if (mode === "submit") {
+        const submitFlow = await this.browser.fillAndSubmitFormSingleSession(
+          job.applyUrl,
+          async (fields) => {
+            const resumeSummary = this.resumeService.summarizeForRole(hydratedProfile);
+            const mappedValues = await this.llm.mapFormFields(fields, { profile: hydratedProfile, resumeSummary, job });
+            const enrichedValues = this.resumeService.enrichMappedValues(fields, mappedValues, hydratedProfile);
+            const answers = this.formFiller.toAnswers(fields, enrichedValues);
+            const validation = this.formFiller.validate(answers, fields);
+            const missingRequiredFields = [
+              ...new Set(
+                validation.errors
+                  .map((err) => err.replace("Missing required field: ", "").trim())
+                  .filter(Boolean)
+              )
+            ];
+            this.log(
+              `map job=${job.externalId} fields=${fields.length} answers=${answers.length} required=${fields.filter((f) => f.required).length}`
+            );
+            return {
+              answers,
+              validationErrors: validation.valid ? [] : validation.errors,
+              missingRequiredFields
+            };
+          },
+          {
+            preview: options.preview,
+            authMode,
+            captchaHandoff,
+            captchaHandoffTimeoutMs,
+            keepBrowserOpenAfterSubmit,
+            keepBrowserOpenMs
+          }
+        );
+
+        const fields = submitFlow.fields;
+        const submitResult = submitFlow.result;
+        if (fields.length === 0) {
+          const diagnosis = await this.browser.diagnoseNoFields(job.applyUrl, {
+            preview: options.preview,
+            authMode,
+            captchaHandoff,
+            captchaHandoffTimeoutMs
+          });
+          const note = diagnosis.hint ? `${diagnosis.reason}. ${diagnosis.hint}` : diagnosis.reason;
+          await this.safeUpsertApplication(job, "needs_human", note);
+          return {
+            status: "needs_human",
+            message: diagnosis.reason,
+            errorCode: diagnosis.code,
+            stage: "extract",
+            applyUrl: job.applyUrl,
+            targetUrl: submitResult.targetUrl,
+            previewScreenshots: submitResult.previewScreenshots
+          };
+        }
+
+        if (submitFlow.validationErrors && submitFlow.validationErrors.length > 0) {
+          await this.safeUpsertApplication(job, "needs_human", submitFlow.validationErrors.join("; "));
+          return {
+            status: "needs_human",
+            message: "Validation failed for required fields",
+            errorCode: "FORM_VALIDATION_FAILED",
+            stage: "validate",
+            requiredFieldCount: fields.filter((f) => f.required).length,
+            missingRequiredFields: submitFlow.missingRequiredFields,
+            applyUrl: job.applyUrl,
+            targetUrl: submitResult.targetUrl,
+            previewScreenshots: submitResult.previewScreenshots
+          };
+        }
+
+        this.log(
+          `submit job=${job.externalId} submitted=${submitResult.submitted} filled=${submitResult.filledCount} missing=${submitResult.missingSelectors.length}`
+        );
+        if (!submitResult.submitted) {
+          const errorCode = this.inferRunErrorCode(submitResult.reason, "SUBMIT_NOT_CONFIRMED");
+          await this.safeUpsertApplication(job, "needs_human", submitResult.reason);
+          return {
+            status: "needs_human",
+            message: submitResult.reason,
+            errorCode,
+            stage: "submit",
+            filledCount: submitResult.filledCount,
+            requiredFieldCount: fields.filter((f) => f.required).length,
+            missingSelectors: submitResult.missingSelectors,
+            applyUrl: job.applyUrl,
+            targetUrl: submitResult.targetUrl,
+            previewScreenshots: submitResult.previewScreenshots
+          };
+        }
+
+        await this.safeUpsertApplication(job, "applied", submitResult.reason);
+        return {
+          status: "applied",
+          message: submitResult.reason,
+          stage: "done",
+          filledCount: submitResult.filledCount,
+          requiredFieldCount: fields.filter((f) => f.required).length,
+          missingSelectors: submitResult.missingSelectors,
+          applyUrl: job.applyUrl,
+          targetUrl: submitResult.targetUrl,
+          previewScreenshots: submitResult.previewScreenshots
+        };
+      }
+
+      let fields = await this.browser.extractFormFields(job.applyUrl, {
+        preview: options.preview,
+        authMode,
+        captchaHandoff,
+        captchaHandoffTimeoutMs
+      });
       if (fields.length === 0 && this.isLinkedIn(job.applyUrl)) {
         this.log(`extract retry job=${job.externalId} reason=zero_fields`);
         await this.sleep(1200);
-        fields = await this.browser.extractFormFields(job.applyUrl, { preview: options.preview });
+        fields = await this.browser.extractFormFields(job.applyUrl, {
+          preview: options.preview,
+          authMode,
+          captchaHandoff,
+          captchaHandoffTimeoutMs
+        });
       }
       this.log(`extract job=${job.externalId} fields=${fields.length}`);
       if (fields.length === 0) {
-        const authState = await this.browser.detectLinkedInAuthState(job.applyUrl);
-        if (authState === "missing_auth") {
+        const linkedInAuthState = await this.browser.detectLinkedInAuthState(job.applyUrl);
+        if (linkedInAuthState === "missing_auth") {
           const reason = "LinkedIn authenticated session missing";
           const note = `${reason}. Run npm run auth:linkedin`;
           await this.safeUpsertApplication(job, "needs_human", note);
@@ -53,7 +177,7 @@ export class ApplicationAgent {
             applyUrl: job.applyUrl
           };
         }
-        if (authState === "expired") {
+        if (linkedInAuthState === "expired") {
           const reason = "LinkedIn session expired";
           const note = `${reason}. Refresh with npm run auth:linkedin`;
           await this.safeUpsertApplication(job, "needs_human", note);
@@ -66,7 +190,38 @@ export class ApplicationAgent {
           };
         }
 
-        const diagnosis = await this.browser.diagnoseNoFields(job.applyUrl, { preview: options.preview });
+        const googleAuthState = await this.browser.detectGoogleAuthState(job.applyUrl, authMode);
+        if (googleAuthState === "missing_auth") {
+          const reason = "Google authenticated session missing";
+          const note = `${reason}. Run npm run auth:google`;
+          await this.safeUpsertApplication(job, "needs_human", note);
+          return {
+            status: "needs_human",
+            message: reason,
+            errorCode: "GOOGLE_AUTH_NOT_CONFIGURED",
+            stage: "extract",
+            applyUrl: job.applyUrl
+          };
+        }
+        if (googleAuthState === "expired") {
+          const reason = "Google session expired";
+          const note = `${reason}. Refresh with npm run auth:google`;
+          await this.safeUpsertApplication(job, "needs_human", note);
+          return {
+            status: "needs_human",
+            message: reason,
+            errorCode: "GOOGLE_SESSION_EXPIRED",
+            stage: "extract",
+            applyUrl: job.applyUrl
+          };
+        }
+
+        const diagnosis = await this.browser.diagnoseNoFields(job.applyUrl, {
+          preview: options.preview,
+          authMode,
+          captchaHandoff,
+          captchaHandoffTimeoutMs
+        });
         const note = diagnosis.hint ? `${diagnosis.reason}. ${diagnosis.hint}` : diagnosis.reason;
         await this.safeUpsertApplication(job, "needs_human", note);
         this.log(`needs_human job=${job.externalId} reason=no_fields diagnosis="${diagnosis.reason}"`);
@@ -91,9 +246,13 @@ export class ApplicationAgent {
         };
       }
 
-      const resumeSummary = this.resumeService.summarizeForRole(profile);
-      const mappedValues = await this.llm.mapFormFields(fields, { profile, resumeSummary, job });
-      const answers = this.formFiller.toAnswers(fields, mappedValues);
+      const resumeSummary = this.resumeService.summarizeForRole(hydratedProfile);
+      const mappedValues = await this.llm.mapFormFields(fields, { profile: hydratedProfile, resumeSummary, job });
+      const enrichedValues = this.resumeService.enrichMappedValues(fields, mappedValues, hydratedProfile);
+      const answers = this.formFiller.toAnswers(fields, enrichedValues);
+      this.log(
+        `map job=${job.externalId} fields=${fields.length} answers=${answers.length} required=${fields.filter((f) => f.required).length}`
+      );
       const validation = this.formFiller.validate(answers, fields);
       const missingRequiredFields = [...new Set(validation.errors
         .map((err) => err.replace("Missing required field: ", "").trim())
@@ -113,46 +272,12 @@ export class ApplicationAgent {
         };
       }
 
-      if (mode === "submit") {
-        const submitResult = await this.browser.fillAndSubmitForm(job.applyUrl, answers, {
-          preview: options.preview
-        });
-        this.log(
-          `submit job=${job.externalId} submitted=${submitResult.submitted} filled=${submitResult.filledCount}`
-        );
-        if (!submitResult.submitted) {
-          await this.safeUpsertApplication(job, "needs_human", submitResult.reason);
-          this.log(`needs_human job=${job.externalId} reason=${submitResult.reason}`);
-          return {
-            status: "needs_human",
-            message: submitResult.reason,
-            errorCode: "SUBMIT_NOT_CONFIRMED",
-            stage: "submit",
-            filledCount: submitResult.filledCount,
-            requiredFieldCount: fields.filter((f) => f.required).length,
-            missingSelectors: submitResult.missingSelectors,
-            applyUrl: job.applyUrl,
-            targetUrl: submitResult.targetUrl,
-            previewScreenshots: submitResult.previewScreenshots
-          };
-        }
-
-        await this.safeUpsertApplication(job, "applied", submitResult.reason);
-        this.log(`applied job=${job.externalId} reason=${submitResult.reason}`);
-        return {
-          status: "applied",
-          message: submitResult.reason,
-          stage: "done",
-          filledCount: submitResult.filledCount,
-          requiredFieldCount: fields.filter((f) => f.required).length,
-          missingSelectors: submitResult.missingSelectors,
-          applyUrl: job.applyUrl,
-          targetUrl: submitResult.targetUrl,
-          previewScreenshots: submitResult.previewScreenshots
-        };
-      }
-
-      const fillResult = await this.browser.fillForm(job.applyUrl, answers, { preview: options.preview });
+      const fillResult = await this.browser.fillForm(job.applyUrl, answers, {
+        preview: options.preview,
+        authMode,
+        captchaHandoff,
+        captchaHandoffTimeoutMs
+      });
       await this.safeUpsertApplication(job, "draft_filled", "Form filled in dry-run mode (not submitted)");
       this.log(`draft_filled job=${job.externalId} filled=${fillResult.filledCount}`);
       return {
@@ -177,6 +302,22 @@ export class ApplicationAgent {
         applyUrl: job.applyUrl
       };
     }
+  }
+
+  private inferRunErrorCode(
+    reason: string,
+    fallback: "SUBMIT_NOT_CONFIRMED" | "NO_FORM_FIELDS"
+  ): "CAPTCHA_BLOCKED" | "SUBMIT_NOT_CONFIRMED" | "NO_FORM_FIELDS" {
+    const r = (reason || "").toLowerCase();
+    if (
+      r.includes("captcha") ||
+      r.includes("hcaptcha") ||
+      r.includes("human verification") ||
+      r.includes("security verification")
+    ) {
+      return "CAPTCHA_BLOCKED";
+    }
+    return fallback;
   }
 
   private async upsertApplication(

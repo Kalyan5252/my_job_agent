@@ -1,11 +1,11 @@
 meta {
-  name: Run Tracking Workflow
+  name: Google Auth Status
   type: http
   seq: 2
 }
 
-post {
-  url: {{baseUrl}}/workflows/tracking/run
+get {
+  url: {{baseUrl}}/auth/google/status
   body: none
   auth: none
 }
