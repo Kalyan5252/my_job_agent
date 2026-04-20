@@ -38,7 +38,7 @@ const EnvSchema = z.object({
   ADZUNA_APP_KEY: z.string().optional(),
   RAPIDAPI_KEY: z.string().optional(),
   RAPIDAPI_HOST: z.string().default("jsearch.p.rapidapi.com"),
-  LINKEDIN_SCRAPER_ENABLED: BoolFromEnv.default(false),
+  LINKEDIN_SCRAPER_ENABLED: BoolFromEnv.default(true),
   LINKEDIN_AUTH_ENABLED: BoolFromEnv.default(true),
   LINKEDIN_STORAGE_STATE_PATH: z.string().default(".auth/linkedin-storage-state.json"),
   GOOGLE_AUTH_ENABLED: BoolFromEnv.default(true),

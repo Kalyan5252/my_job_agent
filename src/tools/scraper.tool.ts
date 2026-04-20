@@ -79,13 +79,13 @@ export class ScraperTool {
     if ("experience" in input) {
       return {
         role: input.role,
-        location: "Remote",
+        location: "Hyderabad",
         skills: input.skills,
         filters: {
-          remoteOnly: true,
+          remoteOnly: false,
           postedWithinHours: 24 * 14,
           country: "India",
-          locations: this.defaultIndiaLocations(),
+          locations: ["Hyderabad", "Bengaluru"],
           minExperienceYears: 0,
           maxExperienceYears: 2
         },
@@ -93,19 +93,19 @@ export class ScraperTool {
           companyTierOrder: ["top", "mid", "other"],
           highPayFirst: true
         },
-        maxResults: 40
+        maxResults: 50
       };
     }
 
     return {
       ...input,
-      maxResults: input.maxResults ?? 40,
+      maxResults: input.maxResults ?? 50,
       filters: {
-        remoteOnly: input.filters?.remoteOnly ?? true,
+        remoteOnly: input.filters?.remoteOnly ?? false,
         postedWithinHours: input.filters?.postedWithinHours ?? 24 * 14,
         employmentType: input.filters?.employmentType,
         country: input.filters?.country ?? "India",
-        locations: input.filters?.locations ?? this.defaultIndiaLocations(),
+        locations: input.filters?.locations ?? ["Hyderabad", "Bengaluru"],
         minSalaryLpa: input.filters?.minSalaryLpa,
         // Strict policy: discovery fetch is limited to early-career roles only.
         minExperienceYears: 0,
@@ -142,13 +142,13 @@ export class ScraperTool {
     }
 
     const roles = this.expandRoles(query).slice(0, 4);
-    const [adzuna, jsearch, linkedin] = await Promise.all([
-      this.scrapeAdzunaIndiaApi(query, roles),
+    this.log("Adzuna fetch temporarily disabled");
+    const [jsearch, linkedin] = await Promise.all([
       this.scrapeRapidApiJSearch(query, roles),
       this.scrapeLinkedInPublic(query)
     ]);
 
-    return [...adzuna, ...jsearch, ...linkedin];
+    return [...jsearch, ...linkedin];
   }
 
   private async scrapeAdzunaIndiaApi(query: JobSearchQuery, roles: string[]): Promise<NormalizedJob[]> {
@@ -847,10 +847,9 @@ export class ScraperTool {
       return true;
     }
 
-    // Strict early-career gate when no explicit years are present.
+    // No explicit years in description: allow non-senior roles.
     if (maxAllowed !== undefined && maxAllowed <= 2) {
-      const earlyKeywords = /(junior|entry[\s-]?level|fresher|intern|internship|graduate|new grad|trainee|associate)/i;
-      if (!earlyKeywords.test(text)) return false;
+      if (seniorTitleKeywords.test(text)) return false;
     }
 
     return true;
@@ -895,7 +894,7 @@ export class ScraperTool {
   }
 
   private prioritizeJobs(jobs: JobPosting[], query: JobSearchQuery): JobPosting[] {
-    const preferredLocations = (query.filters?.locations ?? []).map((l) => l.toLowerCase());
+    const preferredLocations = (query.filters?.locations ?? ["Hyderabad", "Bengaluru"]).map((l) => l.toLowerCase());
     const country = (query.filters?.country ?? "").toLowerCase().trim();
     const tierOrder = query.priority?.companyTierOrder ?? ["top", "mid", "other"];
     const tierRank = new Map<CompanyTier, number>(
@@ -918,9 +917,25 @@ export class ScraperTool {
     const filtered = salaryScoped.length > 0 ? salaryScoped : locationScoped;
 
     return filtered.sort((a, b) => {
+      const aLoc = this.locationPriority(a.location, preferredLocations);
+      const bLoc = this.locationPriority(b.location, preferredLocations);
+      if (aLoc !== bLoc) return aLoc - bLoc;
+
+      const aLinkedIn = (a.source || "").includes("linkedin") ? 0 : 1;
+      const bLinkedIn = (b.source || "").includes("linkedin") ? 0 : 1;
+      if (aLinkedIn !== bLinkedIn) return aLinkedIn - bLinkedIn;
+
+      const aEarly = this.isEarlyCareerRole(a) ? 0 : 1;
+      const bEarly = this.isEarlyCareerRole(b) ? 0 : 1;
+      if (aEarly !== bEarly) return aEarly - bEarly;
+
       const aTier = tierRank.get(a.companyTier ?? "other") ?? 99;
       const bTier = tierRank.get(b.companyTier ?? "other") ?? 99;
       if (aTier !== bTier) return aTier - bTier;
+
+      const aHighPay = (a.salaryLpa ?? 0) >= 15 ? 0 : 1;
+      const bHighPay = (b.salaryLpa ?? 0) >= 15 ? 0 : 1;
+      if (aHighPay !== bHighPay) return aHighPay - bHighPay;
 
       if (highPayFirst) {
         const salaryDelta = (b.salaryLpa ?? 0) - (a.salaryLpa ?? 0);
@@ -1024,7 +1039,27 @@ export class ScraperTool {
   }
 
   private defaultIndiaLocations(): string[] {
-    return ["Hyderabad", "Bengaluru", "Pune", "Chennai"];
+    return ["Hyderabad", "Bengaluru"];
+  }
+
+  private locationPriority(location: string | undefined, preferred: string[]): number {
+    if (!location) return 99;
+    const value = location.toLowerCase();
+    for (let i = 0; i < preferred.length; i += 1) {
+      const city = preferred[i];
+      if (city === "bangalore" || city === "bengaluru") {
+        if (value.includes("bangalore") || value.includes("bengaluru")) return i;
+      } else if (value.includes(city)) {
+        return i;
+      }
+    }
+    if (value.includes("india") || value.includes("remote")) return preferred.length + 1;
+    return preferred.length + 2;
+  }
+
+  private isEarlyCareerRole(job: JobPosting): boolean {
+    const text = `${job.title} ${job.description}`.toLowerCase();
+    return /(junior|entry[\s-]?level|fresher|intern|internship|graduate|new grad|trainee|associate)/i.test(text);
   }
 
   private extractBlocks(input: string, pattern: RegExp): string[] {
