@@ -1,0 +1,104 @@
+meta {
+  name: Run Application - LinkedIn Easy Apply
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{baseUrl}}/workflows/application/run
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+  Accept: application/json
+}
+
+body:json {
+  {
+    "job": {
+      "id": "linkedin-easy-apply-4401275482",
+      "source": "linkedin-easy-apply",
+      "title": "Backend Engineer",
+      "company": "LinkedIn Easy Apply Target",
+      "location": "India",
+      "description": "LinkedIn Easy Apply test flow for stable submit automation.",
+      "requirements": [
+        "TypeScript",
+        "Node.js",
+        "Express.js",
+        "MongoDB",
+        "PostgreSQL",
+        "Redis"
+      ],
+      "applicationUrl": "https://www.linkedin.com/jobs/collections/top-applicant/?currentJobId=4401275482",
+      "score": 95,
+      "apply": true,
+      "reasoning": "Dedicated endpoint test for LinkedIn Easy Apply flow."
+    },
+    "profile": {
+      "role": "Backend Engineer",
+      "skills": [
+        "TypeScript",
+        "Node.js",
+        "Express.js",
+        "MongoDB",
+        "PostgreSQL",
+        "Redis",
+        "AWS",
+        "Docker",
+        "GraphQL",
+        "LLM"
+      ],
+      "experience": "fresher"
+    },
+    "options": {
+      "mode": "submit",
+      "preview": true,
+      "authMode": "linkedin",
+      "captchaHandoff": true,
+      "captchaHandoffTimeoutMs": 300000,
+      "keepBrowserOpenAfterSubmit": true,
+      "keepBrowserOpenMs": 300000
+    }
+  }
+}
+
+example {
+  name: Dry Run Variant
+
+  request: {
+    url: {{baseUrl}}/workflows/application/run
+    method: POST
+    mode: json
+    headers: {
+      Content-Type: application/json
+      Accept: application/json
+    }
+
+    body:json: {
+      {
+        "job": {
+          "id": "linkedin-easy-apply-4401275482",
+          "source": "linkedin-easy-apply",
+          "title": "Backend Engineer",
+          "company": "LinkedIn Easy Apply Target",
+          "location": "India",
+          "description": "LinkedIn Easy Apply dry-run test.",
+          "applicationUrl": "https://www.linkedin.com/jobs/collections/top-applicant/?currentJobId=4401275482"
+        },
+        "profile": {
+          "role": "Backend Engineer",
+          "skills": ["TypeScript", "Node.js", "Express.js", "MongoDB", "PostgreSQL", "Redis"],
+          "experience": "fresher"
+        },
+        "options": {
+          "mode": "dry-run",
+          "preview": true,
+          "authMode": "linkedin"
+        }
+      }
+    }
+  }
+}

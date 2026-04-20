@@ -1,8 +1,11 @@
 import Fastify from "fastify";
+import fs from "node:fs";
+import path from "node:path";
 import { env } from "./config/env";
 import { DiscoveryWorkflow } from "./workflows/discovery.workflow";
 import { TrackingWorkflow } from "./workflows/tracking.workflow";
 import { ApplyWorkflow } from "./workflows/apply.workflow";
+import { ResumeService } from "./services/resume.service";
 import { BrowserTool } from "./tools/browser.tool";
 import { ApplicationRunOptions, CompanyTier, JobProfile, JobSearchQuery, ScoredJob } from "./types";
 
@@ -66,6 +69,7 @@ export function createApp() {
   const tracking = new TrackingWorkflow();
   const apply = new ApplyWorkflow();
   const browser = new BrowserTool();
+  const resume = new ResumeService();
 
   app.get("/health", async () => ({ ok: true, service: "job-agent", at: new Date().toISOString() }));
   app.get("/auth/linkedin/status", async () => ({
@@ -73,6 +77,31 @@ export function createApp() {
     storageStatePath: env.LINKEDIN_STORAGE_STATE_PATH,
     sessionFound: browser.hasLinkedInAuthState()
   }));
+  app.get("/auth/google/status", async () => ({
+    enabled: env.GOOGLE_AUTH_ENABLED,
+    storageStatePath: env.GOOGLE_STORAGE_STATE_PATH,
+    sessionFound: browser.hasGoogleAuthState(),
+    probeStatus: await browser.detectGoogleAuthState("https://accounts.google.com", "google")
+  }));
+  app.get("/profile/candidate", async () => {
+    const profile = resume.hydrateProfile({
+      role: env.DEFAULT_JOB_ROLE,
+      skills: env.DEFAULT_JOB_SKILLS.split(",").map((s) => s.trim()),
+      experience: env.DEFAULT_JOB_EXPERIENCE
+    });
+    return {
+      profile,
+      resumeFilePath: resume.getResumeFilePath(),
+      resumeTextLoaded: Boolean(resume.getResumeText().trim().length),
+      secondaryIdentity: {
+        email: env.SECONDARY_EMAIL,
+        resumeFilePath: env.SECONDARY_RESUME_FILE_PATH,
+        resumeAvailable: fs.existsSync(resolvePath(env.SECONDARY_RESUME_FILE_PATH)),
+        profileAvailable: fs.existsSync(resolvePath(env.SECONDARY_CANDIDATE_PROFILE_PATH))
+      },
+      manualProfileAvailable: fs.existsSync(resolvePath(env.MANUAL_PROFILE_PATH))
+    };
+  });
 
   app.post<{ Body: DiscoveryRequestBody }>("/workflows/discovery/run", async (request) => {
     const profile = toProfile(request.body);
@@ -140,6 +169,10 @@ export function createApp() {
   });
 
   return app;
+}
+
+function resolvePath(input: string): string {
+  return path.isAbsolute(input) ? input : path.resolve(process.cwd(), input);
 }
 
 function toProfile(body: DiscoveryRequestBody): JobProfile {

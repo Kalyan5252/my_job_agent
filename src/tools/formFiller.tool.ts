@@ -2,10 +2,12 @@ import { FieldAnswer, FormField } from "../types";
 
 export class FormFillerTool {
   toAnswers(fields: FormField[], mappedValues: Record<string, string>): FieldAnswer[] {
-    return fields.map((field) => ({
-      fieldName: field.name,
-      value: mappedValues[field.name] ?? ""
-    }));
+    return fields
+      .filter((field) => (field.name || "").trim().length > 0)
+      .map((field) => ({
+        fieldName: field.name,
+        value: mappedValues[field.name] ?? ""
+      }));
   }
 
   validate(answers: FieldAnswer[], fields: FormField[]): { valid: boolean; errors: string[] } {
