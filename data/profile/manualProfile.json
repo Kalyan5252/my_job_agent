@@ -1,0 +1,60 @@
+{
+  "legalName": "Pendem Kalyan",
+  "name": "Kalyan Pendem",
+  "preferredName": "Kalyan Pendem",
+  "emails": [
+    "kalyanpendem007@gmail.com",
+    "kalyan.s.apple@gmail.com"
+  ],
+  "phones": [
+    "+91 9381034364",
+    "+91 9059164384"
+  ],
+  "address": {
+    "line1": "Annapurna Nagar, 1st line",
+    "line2": "Guntur, Andhra Pradesh 522034",
+    "city": "Guntur",
+    "state": "Andhra Pradesh",
+    "postalCode": "522034",
+    "country": "India",
+    "full": "Annapurna Nagar, 1st line, Guntur, Andhra Pradesh, India. Guntur, Andhra Pradesh 522034, India"
+  },
+  "profiles": {
+    "leetcode": "https://leetcode.com/u/KALYAN5252/",
+    "linkedin": "https://www.linkedin.com/in/kalyanpendem/",
+    "github": "https://github.com/Kalyan5252"
+  },
+  "education": {
+    "university": "Vasireddy Venkatadri International Technological University",
+    "degree": "Bachelor in Computer Science",
+    "start": "Oct 2022",
+    "end": "Apr 2026"
+  },
+  "preferences": {
+    "noticePeriodDays": 0,
+    "canJoinImmediately": true,
+    "hasNonCompete": false,
+    "visaSponsorshipRequiredInIndia": false,
+    "currentSalaryLpa": "N/A",
+    "expectedSalaryLpa": 20,
+    "skillYears": {
+      "TypeScript": 1.5,
+      "Node.js": 1.5,
+      "Express.js": 1.5,
+      "MongoDB": 1.5,
+      "PostgreSQL": 1.5,
+      "Redis": 1.2,
+      "AWS": 1.3,
+      "Docker": 1.2,
+      "GraphQL": 1.0,
+      "React.js": 1.0,
+      "Next.js": 1.0,
+      "Python": 1.2,
+      "Java": 1.0,
+      "LLM": 1.2,
+      "RAG": 1.0,
+      "LangChain": 1.0,
+      "Vue.js": 0
+    }
+  }
+}

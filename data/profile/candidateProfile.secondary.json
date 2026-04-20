@@ -1,0 +1,47 @@
+{
+  "name": "Kalyan Pendem",
+  "email": "kalyan.s.apple@gmail.com",
+  "phone": "+91 9381034364",
+  "linkedin": "https://linkedin.com/in/kalyanpendem",
+  "github": "https://github.com/Kalyan5252",
+  "skills": [
+    "TypeScript",
+    "JavaScript",
+    "Node.js",
+    "Express.js",
+    "MongoDB",
+    "PostgreSQL",
+    "Redis",
+    "AWS",
+    "GCP",
+    "Docker",
+    "GraphQL",
+    "REST",
+    "LangChain",
+    "LLM",
+    "RAG",
+    "React",
+    "Python",
+    "Java",
+    "Go",
+    "Git",
+    "Jest",
+    "Linux/Unix",
+    "SQS",
+    "Lambda"
+  ],
+  "educationHighlights": [
+    "Vasireddy Venkatadri Institute Of Technology, B.Tech in Computer Science Oct 2022 \u2013 Apr 2026",
+    "\u2022 CGPA: 8.5 / 10"
+  ],
+  "experienceHighlights": [
+    "Backend Engineer (Contract), Confidential Client (Healthcare)",
+    "Software Development Intern (Full-Time), Sense Semiconductor and IT Solutions",
+    "\u2022 Engineered an end-to-end RAG system with LLM-based chat, semantic search and structured file indexing for"
+  ],
+  "hasNonCompete": false,
+  "canJoinImmediately": true,
+  "noticePeriodDays": 0,
+  "resumeFilePath": "/Users/kalyan/Desktop/MY FILES/Full Stack development/my_job_agent/data/resume/Kalyan Show (2).pdf",
+  "generatedFrom": "/Users/kalyan/Desktop/MY FILES/Full Stack development/my_job_agent/data/resume/Kalyan Show (2).pdf"
+}

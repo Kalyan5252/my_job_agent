@@ -1,0 +1,51 @@
+Kalyan Pendem
+kalyanpendem007@gmail.com|+91 9381034364
+linkedin.com/in/kalyanpendem|github.com/Kalyan5252|leetcode.com/KALYAN5252
+Skills
+Languages:Python, TypeScript, JavaScript
+Databases:MongoDB, SQL, PostgreSQL, Neo4j, Redis
+Cloud Platforms & Distributed Systems:AWS, GCP, Docker, SQS, Lambda
+Full-Stack Technologies:React, Node.js, Express.js, NEXT, REST, GraphQL
+Testing & DevOps:Jest, Git, Linux/Unix
+Applied AI:RAG, LLM pipelines, LangChain
+Work Experience
+Backend Engineer (Contract), Confidential Client (Healthcare)
+(Typescript, Node.js, Express, Jest, SQS, CloudWatch)
+July 2025 – Nov 2025
+• Designed an asynchronous SQS-based pipeline to decouple microservices, explicitly trading consistency for
+throughput — reducing request latency from 8s to <2s while sustaining 500K+ req/hr under burst traffic.
+• Led production debugging of auth failures across concurrent requests; redesigned role-based access control and
+resolved token validation edge cases, improving API latency by 35%.
+• Hardened production services by remediating 15+ critical/high Snyk vulnerabilities, introducing automated
+secret rotation, and enforcing 90% test coverage via CI pipelines.
+Software Development Intern (Full-Time), Sense Semiconductor and IT Solutions
+(Typescript, Node.js, Next, Python, GenAI, LangChain, Pinecone)
+Apr 2024 – May 2025
+• Architected a full-stack LMS serving 5,000+ students; identified session persistence as the primary failure risk
+and introduced Redis-backed session storage to prevent data loss during long-running assessments.
+• Built a retrieval-augmented AI tutor, tuned precision vs. recall tradeoffs in the retrieval pipeline, and reduced
+instructor support tickets by 50%.
+• Owned serverless data storage and Lambda-based autoscaling compute pipelines, enabling reliable scale to
+500+ concurrent users during peak assessment loads.
+Projects
+AI-Powered Analysis Platform for CDR/IPDR Data(ReactJS, Python, FastAPI) CDR-IPDR
+• Designed and implemented a forensic data analysis platform that processes large-scale CDR/IPDR datasets into
+a Neo4j knowledge graph (100K+ records), entity correlation, and investigative query workflows.
+• Orchestrated a query-generation pipeline that maps natural-language inputs to safe, bounded Cypher queries
+(up to 4-hop traversal), enabling reliable investigation workflows on Neo4j graphs.
+• Evaluated query correctness using a hybrid approach: rule-based validation (syntax + schema constraints) and
+LLM-as-judge scoring (factual grounding, query alignment), achieving 90% correctness on a curated benchmark
+• Published in IJARSCT — proposed a NL-to-Cypher pipeline for forensic graph traversal on CDR/IPDR datasets.
+Sphere – Educational Platform(Typescript, NodeJS, NEXT, PineCone, SQL, RAG) Maker-or/xs
+• Engineered an end-to-end RAG system with LLM-based chat, semantic search and structured file indexing for
+academic material querying; system served 500+ active students.
+Education
+Vasireddy Venkatadri Institute Of Technology, B.Tech in Computer Science Oct 2022 – Apr 2026
+• CGPA: 8.5 / 10
+Achievements & Community
+• Secured 3rd place in a state-level hackathon by developing an agentic knowledge graph system to uncover
+relational patterns within complex datasets.
+• National Finalist (Top 7) in the AI/ML Innovation Hackathon (OpenAI Innovation Category) for developing an
+educational chatbot at Pharmathon.
+• Data Structures & Algorithms: Solved 500+ LeetCode problems, consistently deriving optimal time/space
+solutions across graph, DP, and tree-based patterns.

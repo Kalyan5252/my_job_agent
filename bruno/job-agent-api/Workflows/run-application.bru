@@ -39,12 +39,25 @@ body:json {
     },
     "profile": {
       "role": "Junior Full Stack Developer",
-      "skills": ["TypeScript", "Node.js", "Express.js", "MongoDB", "PostgreSQL", "Redis", "Docker", "AWS", "GCP", "GraphQL", "LLM"],
+      "skills": [
+        "TypeScript",
+        "Node.js",
+        "Express.js",
+        "MongoDB",
+        "PostgreSQL",
+        "Redis",
+        "Docker",
+        "AWS",
+        "GCP",
+        "GraphQL",
+        "LLM"
+      ],
       "experience": "junior"
     },
     "options": {
-      "mode": "dry-run",
-      "preview": true
+      "mode": "submit",
+      "preview": true,
+      "authMode": "auto"
     }
   }
 }
@@ -229,6 +242,154 @@ example {
             ]
           }
         }
+      '''
+    }
+  }
+}
+
+example {
+  name: New Job LI
+  
+  request: {
+    url: {{baseUrl}}/workflows/application/run
+    method: POST
+    mode: json
+    headers: {
+      Content-Type: application/json
+      Accept: application/json
+    }
+  
+    body:json: {
+      {
+        "job": {
+          "id": "linkedin-llama-junior-full-stack-developer-bengaluru",
+          "source": "linkedin-public",
+          "title": "Junior Full Stack Developer",
+          "company": "Llama",
+          "location": "Bengaluru, Karnataka, India",
+          "description": "Junior full stack role requiring TypeScript, Node.js, Express.js, MongoDB, PostgreSQL, and Redis.",
+          "requirements": [
+            "TypeScript",
+            "Node.js",
+            "Express.js",
+            "MongoDB",
+            "PostgreSQL",
+            "Redis"
+          ],
+          "applicationUrl": "https://in.linkedin.com/jobs/view/junior-full-stack-developer-at-llama-4306117443?position=8&pageNum=0&refId=QAM9yUzPZ589stJeBu%2BCFQ%3D%3D&trackingId=CL93a%2BzPE9rekm784U0l7g%3D%3D",
+          "score": 88,
+          "apply": true,
+          "reasoning": "Strong match for junior full stack backend-heavy profile"
+        },
+        "profile": {
+          "role": "Junior Full Stack Developer",
+          "skills": [
+            "TypeScript",
+            "Node.js",
+            "Express.js",
+            "MongoDB",
+            "PostgreSQL",
+            "Redis",
+            "Docker",
+            "AWS",
+            "GCP",
+            "GraphQL",
+            "LLM"
+          ],
+          "experience": "junior"
+        },
+        "options": {
+          "mode": "submit",
+          "preview": true
+        }
+      }
+    }
+  }
+  
+  response: {
+    status: {
+      code: 200
+      text: OK
+    }
+  
+    body: {
+      type: text
+      content: '''
+  
+      '''
+    }
+  }
+}
+
+example {
+  name: LinkedIn 4381439574
+  description: New LinkedIn job test payload for application workflow
+  
+  request: {
+    url: {{baseUrl}}/workflows/application/run
+    method: POST
+    mode: json
+    headers: {
+      Content-Type: application/json
+      Accept: application/json
+    }
+  
+    body:json: {
+      {
+        "job": {
+          "id": "linkedin-4381439574",
+          "source": "linkedin-public",
+          "title": "LinkedIn Job 4381439574",
+          "company": "Unknown (from LinkedIn URL)",
+          "location": "India",
+          "description": "Application run target from direct LinkedIn URL.",
+          "requirements": [
+            "TypeScript",
+            "Node.js",
+            "Express.js",
+            "MongoDB",
+            "PostgreSQL"
+          ],
+          "applicationUrl": "https://www.linkedin.com/jobs/view/4381439574/?eBP=BUDGET_EXHAUSTED_JOB&trk=flagship3_jobs_discovery_jymbii&refId=cCDShN0prd6oCYghZwQt%2BQ%3D%3D&trackingId=tjy8JvIJ27BV8YdyQijhhQ%3D%3D",
+          "score": 80,
+          "apply": true,
+          "reasoning": "Direct LinkedIn URL provided by user for apply workflow testing."
+        },
+        "profile": {
+          "role": "Backend Engineer",
+          "skills": [
+            "TypeScript",
+            "Node.js",
+            "Express.js",
+            "MongoDB",
+            "PostgreSQL",
+            "Redis",
+            "AWS",
+            "Docker",
+            "GraphQL",
+            "LLM",
+            "RAG"
+          ],
+          "experience": "junior"
+        },
+        "options": {
+          "mode": "dry-run",
+          "preview": true
+        }
+      }
+    }
+  }
+  
+  response: {
+    status: {
+      code: 200
+      text: OK
+    }
+  
+    body: {
+      type: text
+      content: '''
+  
       '''
     }
   }

@@ -1,11 +1,11 @@
 meta {
-  name: Run Tracking Workflow
+  name: Candidate Profile
   type: http
-  seq: 2
+  seq: 1
 }
 
-post {
-  url: {{baseUrl}}/workflows/tracking/run
+get {
+  url: {{baseUrl}}/profile/candidate
   body: none
   auth: none
 }
