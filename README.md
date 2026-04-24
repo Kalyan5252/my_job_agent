@@ -11,7 +11,7 @@ Multi-agent backend system that discovers jobs, applies with intelligent form ha
 ## Stack
 
 - Node.js + TypeScript + Fastify
-- OpenAI API for reasoning/scoring
+- OpenAI or Gemini API for reasoning/scoring
 - Playwright for browser automation
 - MongoDB (raw jobs + AI metadata)
 - PostgreSQL (application tracking)
@@ -56,8 +56,10 @@ npm run dev:cron
 - CAPTCHA/anti-bot flows are handled with fallback + human-in-loop hooks.
 - LLM actions include schema constraints and guard checks before submit.
 - All automation decisions are auditable through structured logs.
-- Optional Groq scraper-assist is supported for HTML extraction (`GROQ_SCRAPER_ENABLED=true`).
-- Recommended pattern: use Groq OSS for extraction assistance and reserve OpenAI GPT-5 models for scoring/decision steps.
+- Main provider toggle: set `AI_PROVIDER=openai` or `AI_PROVIDER=gemini`.
+- Scraper-assist toggle: set `AI_SCRAPER_ENABLED=true` and `AI_SCRAPER_PROVIDER=openai` or `AI_SCRAPER_PROVIDER=gemini`.
+- For OpenAI, set `OPENAI_API_KEY`; for Gemini, set `GEMINI_API_KEY`.
+- You can switch providers without code changes by updating `.env` and restarting the process.
 
 ## Neon Postgres
 
