@@ -7,7 +7,15 @@ import { TrackingWorkflow } from "./workflows/tracking.workflow";
 import { ApplyWorkflow } from "./workflows/apply.workflow";
 import { ResumeService } from "./services/resume.service";
 import { BrowserTool } from "./tools/browser.tool";
-import { ApplicationRunOptions, CompanyTier, JobProfile, JobSearchQuery, ScoredJob } from "./types";
+import {
+  ApplicationRunOptions,
+  CompanyTier,
+  DiscoveryFinding,
+  DiscoveryRunResult,
+  JobProfile,
+  JobSearchQuery,
+  ScoredJob
+} from "./types";
 
 interface DiscoveryRequestBody extends Partial<JobProfile> {
   location?: string;
@@ -19,12 +27,6 @@ interface DiscoveryRequestBody extends Partial<JobProfile> {
   maxResults?: number;
   companyTierOrder?: CompanyTier[];
   highPayFirst?: boolean;
-}
-
-interface DiscoveryRunResponse {
-  total: number;
-  applyCount: number;
-  jobs: ScoredJob[];
 }
 
 interface JobFaq {
@@ -125,7 +127,7 @@ export function createApp() {
       });
     }
 
-    const runResult = injected.json<DiscoveryRunResponse>();
+    const runResult = injected.json<DiscoveryRunResult>();
     const detailedJobs = runResult.jobs.map((job) => toDetailedDiscoveryJob(job));
     const topRequirementSummary = summarizeRequirements(runResult.jobs);
 
@@ -136,6 +138,8 @@ export function createApp() {
         fetched: runResult.total,
         applyRecommended: runResult.applyCount
       },
+      diagnostics: runResult.diagnostics,
+      findings: summarizeFindings(runResult.diagnostics.findings),
       topRequirementSummary,
       jobs: detailedJobs
     };
@@ -300,6 +304,10 @@ function summarizeRequirements(jobs: ScoredJob[]): Array<{ requirement: string; 
     .map(([requirement, count]) => ({ requirement, count }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 10);
+}
+
+function summarizeFindings(findings: DiscoveryFinding[]): DiscoveryFinding[] {
+  return findings.slice(0, 10);
 }
 
 function normalizeRequirements(job: ScoredJob): string[] {

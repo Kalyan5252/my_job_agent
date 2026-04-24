@@ -1,6 +1,6 @@
 import { chromium } from "playwright";
 import { CompanyTier, JobPosting, JobProfile, JobSearchQuery } from "../types";
-import { GroqScraperService } from "../services/groqScraper.service";
+import { AiScraperService } from "../services/aiScraper.service";
 import { env } from "../config/env";
 
 interface NormalizedJob extends Omit<JobPosting, "location"> {
@@ -9,7 +9,7 @@ interface NormalizedJob extends Omit<JobPosting, "location"> {
 }
 
 export class ScraperTool {
-  private readonly groqScraper = new GroqScraperService();
+  private readonly aiScraper = new AiScraperService();
 
   async fetchJobs(input: JobProfile | JobSearchQuery): Promise<JobPosting[]> {
     const query = this.normalizeQuery(input);
@@ -303,7 +303,7 @@ export class ScraperTool {
     const locations = query.filters?.locations?.length ? query.filters.locations.slice(0, 2) : ["India"];
 
     try {
-      browser = await chromium.launch({ headless: true });
+      browser = await this.launchChromiumWithFallback();
       const page = await browser.newPage();
 
       for (const loc of locations) {
@@ -472,13 +472,13 @@ export class ScraperTool {
       });
     }
 
-    if (normalized.length >= 5 || !this.groqScraper.isEnabled()) {
+    if (normalized.length >= 5 || !this.aiScraper.isEnabled()) {
       return normalized;
     }
 
-    this.log("HTML selector extraction low; trying Groq scraper assist");
-    const groqJobs = await this.groqScraper.extractJobsFromHtml("weworkremotely", html, query);
-    const enrichedGroq: NormalizedJob[] = groqJobs.map((job) => ({
+    this.log(`HTML selector extraction low; trying ${env.AI_SCRAPER_PROVIDER} scraper assist`);
+    const aiJobs = await this.aiScraper.extractJobsFromHtml("weworkremotely", html, query);
+    const enrichedAi: NormalizedJob[] = aiJobs.map((job) => ({
       ...job,
       location: job.location || query.location || "Remote",
       companyTier: this.inferCompanyTier(job.company),
@@ -486,7 +486,7 @@ export class ScraperTool {
       strategy: "html"
     }));
 
-    return [...normalized, ...enrichedGroq];
+    return [...normalized, ...enrichedAi];
   }
 
   // Strategy 3: Browser automation fallback for dynamic pages.
@@ -495,7 +495,7 @@ export class ScraperTool {
 
     try {
       this.log("Browser fallback started");
-      browser = await chromium.launch({ headless: true });
+      browser = await this.launchChromiumWithFallback();
       const page = await browser.newPage();
       await page.goto(
         `https://weworkremotely.com/remote-jobs/search?term=${encodeURIComponent(query.role)}`,
@@ -703,6 +703,28 @@ export class ScraperTool {
       .split(/[^a-z0-9]+/g)
       .map((token) => token.trim())
       .filter(Boolean);
+  }
+
+  private async launchChromiumWithFallback(): Promise<Awaited<ReturnType<typeof chromium.launch>>> {
+    try {
+      this.log("Attempting standard Chromium launch...");
+      return await chromium.launch({ headless: true });
+    } catch (error) {
+      this.log("Standard launch failed. Attempting Catalina-compatible fallback...");
+
+      try {
+        this.log("Attempting native Firefox launch...");
+    const { firefox } = require("playwright"); 
+    return await firefox.launch({ headless: true });
+      } catch (fallbackError) {
+        this.log(
+          `Critical error: all browser launch attempts failed: ${
+            fallbackError instanceof Error ? fallbackError.message : "unknown error"
+          }`
+        );
+        throw fallbackError;
+      }
+    }
   }
 
   private log(message: string): void {
