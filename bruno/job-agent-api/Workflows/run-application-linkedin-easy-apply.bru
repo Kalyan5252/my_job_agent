@@ -67,7 +67,7 @@ body:json {
 
 example {
   name: Dry Run Variant
-
+  
   request: {
     url: {{baseUrl}}/workflows/application/run
     method: POST
@@ -76,7 +76,7 @@ example {
       Content-Type: application/json
       Accept: application/json
     }
-
+  
     body:json: {
       {
         "job": {
@@ -99,6 +99,20 @@ example {
           "authMode": "linkedin"
         }
       }
+    }
+  }
+  
+  response: {
+    status: {
+      code: 200
+      text: OK
+    }
+  
+    body: {
+      type: json
+      content: '''
+  
+      '''
     }
   }
 }
