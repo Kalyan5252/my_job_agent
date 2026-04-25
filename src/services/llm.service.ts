@@ -2,7 +2,7 @@ import OpenAI from "openai";
 import { env } from "../config/env";
 import { FormField, JobPosting, JobProfile } from "../types";
 
-type LlmProvider = "openai" | "gemini";
+type LlmProvider = "openai" | "openrouter";
 type JobStatus = "applied" | "rejected" | "interview" | "unknown";
 type LlmTask =
   | "jobScoring"
@@ -10,32 +10,29 @@ type LlmTask =
   | "fieldMapping"
   | "statusClassification";
 
-interface GeminiGenerateContentResponse {
-  candidates?: Array<{
-    content?: {
-      parts?: Array<{
-        text?: string;
-      }>;
-    };
-  }>;
-}
-
-export class GeminiRateLimitError extends Error {
+export class OpenRouterRateLimitError extends Error {
   constructor(
     message: string,
     readonly status: number,
     readonly retryAfterMs?: number
   ) {
     super(message);
-    this.name = "GeminiRateLimitError";
+    this.name = "OpenRouterRateLimitError";
   }
 }
 
 export class LLMService {
   private readonly openAiClient: OpenAI | null;
+  private readonly openRouterClient: OpenAI | null;
 
   constructor() {
     this.openAiClient = env.OPENAI_API_KEY ? new OpenAI({ apiKey: env.OPENAI_API_KEY }) : null;
+    this.openRouterClient = env.OPENROUTER_API_KEY
+      ? new OpenAI({
+          apiKey: env.OPENROUTER_API_KEY,
+          baseURL: "https://openrouter.ai/api/v1"
+        })
+      : null;
   }
 
   private fallbackScore(profile: JobProfile, text: string): number {
@@ -62,7 +59,7 @@ export class LLMService {
     try {
       text = await this.createResponseWithFallback("jobScoring", prompt);
     } catch (error) {
-      if (isGeminiRateLimitError(error)) {
+      if (isOpenRouterRateLimitError(error)) {
         throw error;
       }
 
@@ -91,7 +88,7 @@ export class LLMService {
     try {
       text = await this.createResponseWithFallback("jobDecision", prompt);
     } catch (error) {
-      if (isGeminiRateLimitError(error)) {
+      if (isOpenRouterRateLimitError(error)) {
         throw error;
       }
 
@@ -156,17 +153,17 @@ export class LLMService {
   }
 
   private hasProviderClient(): boolean {
-    if (env.AI_PROVIDER === "gemini") return Boolean(env.GEMINI_API_KEY);
+    if (env.AI_PROVIDER === "openrouter") return Boolean(this.openRouterClient);
     return Boolean(this.openAiClient);
   }
 
   private providerKeyLabel(): string {
-    return env.AI_PROVIDER === "gemini" ? "GEMINI_API_KEY" : "OPENAI_API_KEY";
+    return env.AI_PROVIDER === "openrouter" ? "OPENROUTER_API_KEY" : "OPENAI_API_KEY";
   }
 
   private async createResponseWithFallback(task: LlmTask, input: string): Promise<string> {
-    if (env.AI_PROVIDER === "gemini") {
-      return await this.createGeminiResponse(input, this.modelFor(task, "gemini"));
+    if (env.AI_PROVIDER === "openrouter") {
+      return await this.createOpenRouterResponse(input, this.modelFor(task, "openrouter"));
     }
 
     const { primary, fallback } = this.openAiModelsFor(task);
@@ -200,56 +197,40 @@ export class LLMService {
     }
   }
 
-  private async createGeminiResponse(input: string, model: string): Promise<string> {
-    if (!env.GEMINI_API_KEY) {
-      throw new Error("Gemini API key is not initialized");
+  private async createOpenRouterResponse(input: string, model: string): Promise<string> {
+    if (!this.openRouterClient) {
+      throw new Error("OpenRouter client is not initialized");
     }
 
-    const retries = env.GEMINI_RATE_LIMIT_MAX_RETRIES;
+    const retries = env.OPENROUTER_RATE_LIMIT_MAX_RETRIES;
     let attempt = 0;
 
     while (true) {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(env.GEMINI_API_KEY)}`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            contents: [
-              {
-                parts: [{ text: input }]
-              }
-            ],
-            generationConfig: {
-              temperature: 0.1,
-              responseMimeType: "application/json"
-            }
-          })
+      try {
+        const res = await this.openRouterClient.chat.completions.create({
+          model,
+          temperature: 0.1,
+          messages: [{ role: "user", content: input }]
+        });
+        return res.choices[0]?.message?.content ?? "";
+      } catch (error) {
+        const status = getHttpStatus(error);
+        if (status !== 429) {
+          throw error;
         }
-      );
 
-      if (response.ok) {
-        const data = (await response.json()) as GeminiGenerateContentResponse;
-        return extractGeminiText(data);
+        const retryAfterMs = parseRetryAfterMs(getHeaderValue(error, "retry-after"));
+        if (attempt >= retries) {
+          throw new OpenRouterRateLimitError(
+            `OpenRouter request failed with status ${status}`,
+            status,
+            retryAfterMs
+          );
+        }
+
+        await sleep(retryAfterMs ?? env.OPENROUTER_RATE_LIMIT_RETRY_DELAY_MS * (attempt + 1));
+        attempt += 1;
       }
-
-      if (response.status !== 429) {
-        throw new Error(`Gemini request failed with status ${response.status}`);
-      }
-
-      const retryAfterMs = parseRetryAfterMs(response.headers.get("retry-after"));
-      if (attempt >= retries) {
-        throw new GeminiRateLimitError(
-          `Gemini request failed with status ${response.status}`,
-          response.status,
-          retryAfterMs
-        );
-      }
-
-      await sleep(retryAfterMs ?? env.GEMINI_RATE_LIMIT_RETRY_DELAY_MS * (attempt + 1));
-      attempt += 1;
     }
   }
 
@@ -261,11 +242,11 @@ export class LLMService {
         fieldMapping: env.OPENAI_MODEL_FIELD_MAPPING,
         statusClassification: env.OPENAI_MODEL_STATUS_CLASSIFICATION
       },
-      gemini: {
-        jobScoring: env.GEMINI_MODEL_JOB_SCORING,
-        jobDecision: env.GEMINI_MODEL_JOB_DECISION,
-        fieldMapping: env.GEMINI_MODEL_FIELD_MAPPING,
-        statusClassification: env.GEMINI_MODEL_STATUS_CLASSIFICATION
+      openrouter: {
+        jobScoring: env.OPENROUTER_MODEL_JOB_SCORING,
+        jobDecision: env.OPENROUTER_MODEL_JOB_DECISION,
+        fieldMapping: env.OPENROUTER_MODEL_FIELD_MAPPING,
+        statusClassification: env.OPENROUTER_MODEL_STATUS_CLASSIFICATION
       }
     } as const;
 
@@ -287,15 +268,6 @@ export class LLMService {
   }
 }
 
-function extractGeminiText(data: GeminiGenerateContentResponse): string {
-  return (
-    data.candidates
-      ?.flatMap((candidate) => candidate.content?.parts || [])
-      .map((part) => part.text || "")
-      .join("") || ""
-  );
-}
-
 function safeParseJson<T>(raw: string): T | null {
   const trimmed = raw.trim();
   const first = trimmed.indexOf("{");
@@ -309,7 +281,7 @@ function safeParseJson<T>(raw: string): T | null {
   }
 }
 
-function parseRetryAfterMs(value: string | null): number | undefined {
+function parseRetryAfterMs(value: string | null | undefined): number | undefined {
   if (!value) return undefined;
 
   const seconds = Number(value);
@@ -323,12 +295,46 @@ function parseRetryAfterMs(value: string | null): number | undefined {
   return Math.max(0, absolute - Date.now());
 }
 
+function getHttpStatus(error: unknown): number | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  const maybe = error as { status?: number; response?: { status?: number } };
+  return maybe.status ?? maybe.response?.status;
+}
+
+function getHeaderValue(error: unknown, headerName: string): string | undefined {
+  if (!error || typeof error !== "object") return undefined;
+
+  const maybe = error as {
+    headers?: Headers;
+    response?: { headers?: Headers | Record<string, string> };
+  };
+
+  if (maybe.headers instanceof Headers) {
+    return maybe.headers.get(headerName) ?? undefined;
+  }
+
+  const headers = maybe.response?.headers;
+  if (headers instanceof Headers) {
+    return headers.get(headerName) ?? undefined;
+  }
+
+  if (headers && typeof headers === "object") {
+    const value = Object.entries(headers).find(
+      ([key]) => key.toLowerCase() === headerName.toLowerCase()
+    )?.[1];
+
+    return Array.isArray(value) ? value[0] : value;
+  }
+
+  return undefined;
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export function isGeminiRateLimitError(error: unknown): error is GeminiRateLimitError {
-  return error instanceof GeminiRateLimitError;
+export function isOpenRouterRateLimitError(error: unknown): error is OpenRouterRateLimitError {
+  return error instanceof OpenRouterRateLimitError;
 }
 
 function clamp(value: number, min: number, max: number): number {
