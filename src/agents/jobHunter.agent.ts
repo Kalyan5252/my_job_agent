@@ -5,14 +5,17 @@ import { LLMService } from "../services/llm.service";
 import { GeminiRateLimitError, isGeminiRateLimitError } from "../services/llm.service";
 import { ScoringService } from "../services/scoring.service";
 import { ScraperTool } from "../tools/scraper.tool";
-import { JobPosting, JobProfile, JobSearchQuery, ScoredJob } from "../types";
+import { DiscoveryDiagnostics, JobPosting, JobProfile, JobSearchQuery, ScoredJob } from "../types";
 
 export class JobHunterAgent {
   private readonly scraper = new ScraperTool();
   private readonly llm = new LLMService();
   private readonly scoring = new ScoringService(this.llm);
 
-  async run(profile: JobProfile, searchQuery?: Partial<JobSearchQuery>): Promise<ScoredJob[]> {
+  async run(
+    profile: JobProfile,
+    searchQuery?: Partial<JobSearchQuery>
+  ): Promise<{ jobs: ScoredJob[]; diagnostics: DiscoveryDiagnostics }> {
     const jobs = await this.scraper.fetchJobs({
       role: searchQuery?.role || profile.role,
       skills: searchQuery?.skills || profile.skills,
@@ -33,7 +36,10 @@ export class JobHunterAgent {
       await enqueueApplication({ job, profile });
     }
 
-    return scored;
+    return {
+      jobs: scored,
+      diagnostics: this.scraper.getLastDiagnostics()
+    };
   }
 
   private async scoreJobs(profile: JobProfile, jobs: JobPosting[]): Promise<ScoredJob[]> {
