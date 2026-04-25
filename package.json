@@ -15,7 +15,7 @@
     "resume:import": "python3 scripts/import_resume_profile.py --pdf \"data/resume/Kalyan Show (1).pdf\"",
     "resume:import:secondary": "python3 scripts/import_resume_profile.py --pdf \"data/resume/Kalyan Show (2).pdf\" --out-text \"data/profile/resume.secondary.txt\" --out-profile \"data/profile/candidateProfile.secondary.json\"",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/server.js",
+    "start": "node dist/src/server.js",
     "start:worker": "node dist/queues/worker.js",
     "start:cron": "node dist/scripts/cronJobs.js",
     "typecheck": "tsc --noEmit"
@@ -26,7 +26,6 @@
   "dependencies": {
     "bullmq": "^5.12.7",
     "dotenv": "^16.4.5",
-    "esbuild": "0.19.12",
     "fastify": "^5.0.0",
     "imap": "^0.8.19",
     "ioredis": "^5.4.1",
@@ -44,7 +43,8 @@
     "@types/node": "^22.7.4",
     "@types/node-cron": "^3.0.11",
     "@types/pg": "^8.20.0",
-    "tsx": "^4.19.1",
+    "esbuild": "^0.18.20",
+    "tsx": "^4.7.1",
     "typescript": "^5.6.2"
   }
 }

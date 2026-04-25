@@ -12,26 +12,23 @@ interface ExtractedJob {
   salaryLpa?: number;
 }
 
-interface GeminiGenerateContentResponse {
-  candidates?: Array<{
-    content?: {
-      parts?: Array<{
-        text?: string;
-      }>;
-    };
-  }>;
-}
-
 export class AiScraperService {
   private readonly openAiClient: OpenAI | null;
+  private readonly openRouterClient: OpenAI | null;
 
   constructor() {
     this.openAiClient = env.OPENAI_API_KEY ? new OpenAI({ apiKey: env.OPENAI_API_KEY }) : null;
+    this.openRouterClient = env.OPENROUTER_API_KEY
+      ? new OpenAI({
+          apiKey: env.OPENROUTER_API_KEY,
+          baseURL: "https://openrouter.ai/api/v1"
+        })
+      : null;
   }
 
   isEnabled(): boolean {
     if (!env.AI_SCRAPER_ENABLED) return false;
-    if (env.AI_SCRAPER_PROVIDER === "gemini") return Boolean(env.GEMINI_API_KEY);
+    if (env.AI_SCRAPER_PROVIDER === "openrouter") return Boolean(this.openRouterClient);
     return Boolean(this.openAiClient);
   }
 
@@ -57,8 +54,8 @@ export class AiScraperService {
 
     try {
       const text =
-        env.AI_SCRAPER_PROVIDER === "gemini"
-          ? await this.createGeminiResponse(prompt, env.GEMINI_MODEL_SCRAPER)
+        env.AI_SCRAPER_PROVIDER === "openrouter"
+          ? await this.createOpenRouterResponse(prompt, env.OPENROUTER_MODEL_SCRAPER)
           : await this.createOpenAiResponse(prompt, env.OPENAI_MODEL_SCRAPER, "gpt-5.4-mini");
 
       const parsed = safeParseJson<{ jobs?: ExtractedJob[] }>(text);
@@ -87,7 +84,9 @@ export class AiScraperService {
   }
 
   private currentModel(): string {
-    return env.AI_SCRAPER_PROVIDER === "gemini" ? env.GEMINI_MODEL_SCRAPER : env.OPENAI_MODEL_SCRAPER;
+    return env.AI_SCRAPER_PROVIDER === "openrouter"
+      ? env.OPENROUTER_MODEL_SCRAPER
+      : env.OPENAI_MODEL_SCRAPER;
   }
 
   private async createOpenAiResponse(input: string, model: string, fallbackModel: string): Promise<string> {
@@ -117,48 +116,19 @@ export class AiScraperService {
     }
   }
 
-  private async createGeminiResponse(input: string, model: string): Promise<string> {
-    if (!env.GEMINI_API_KEY) {
-      throw new Error("Gemini API key is not configured");
+  private async createOpenRouterResponse(input: string, model: string): Promise<string> {
+    if (!this.openRouterClient) {
+      throw new Error("OpenRouter client is not configured");
     }
 
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(env.GEMINI_API_KEY)}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [{ text: input }]
-            }
-          ],
-          generationConfig: {
-            temperature: 0.1,
-            responseMimeType: "application/json"
-          }
-        })
-      }
-    );
+    const res = await this.openRouterClient.chat.completions.create({
+      model,
+      temperature: 0.1,
+      messages: [{ role: "user", content: input }]
+    });
 
-    if (!response.ok) {
-      throw new Error(`Gemini scraper request failed with status ${response.status}`);
-    }
-
-    const data = (await response.json()) as GeminiGenerateContentResponse;
-    return extractGeminiText(data);
+    return res.choices[0]?.message?.content ?? "";
   }
-}
-
-function extractGeminiText(data: GeminiGenerateContentResponse): string {
-  return (
-    data.candidates
-      ?.flatMap((candidate) => candidate.content?.parts || [])
-      .map((part) => part.text || "")
-      .join("") || ""
-  );
 }
 
 function safeParseJson<T>(raw: string): T | null {

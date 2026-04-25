@@ -2,7 +2,7 @@ import { jobsCollection } from "../db/mongo/client";
 import { enqueueApplication } from "../queues/apply.queue";
 import { env } from "../config/env";
 import { LLMService } from "../services/llm.service";
-import { GeminiRateLimitError, isGeminiRateLimitError } from "../services/llm.service";
+import { OpenRouterRateLimitError, isOpenRouterRateLimitError } from "../services/llm.service";
 import { ScoringService } from "../services/scoring.service";
 import { ScraperTool } from "../tools/scraper.tool";
 import { DiscoveryDiagnostics, JobPosting, JobProfile, JobSearchQuery, ScoredJob } from "../types";
@@ -64,7 +64,7 @@ export class JobHunterAgent {
           return;
         }
 
-        if (isGeminiRateLimitError(result.reason)) {
+        if (isOpenRouterRateLimitError(result.reason)) {
           rateLimited.push(item);
           return;
         }
@@ -86,7 +86,7 @@ export class JobHunterAgent {
             ...item.job,
             score: 70,
             apply: true,
-            reasoning: "fallback decision (gemini rate limited)"
+            reasoning: "fallback decision (openrouter rate limited)"
           };
         } else {
           queue.unshift(...rateLimited);
@@ -104,7 +104,7 @@ export class JobHunterAgent {
     return results.filter((job): job is ScoredJob => Boolean(job));
   }
 
-  private retryDelayFrom(error?: GeminiRateLimitError): number {
+  private retryDelayFrom(error?: OpenRouterRateLimitError): number {
     return error?.retryAfterMs ?? env.DISCOVERY_SCORE_BATCH_DELAY_MS;
   }
 
@@ -115,9 +115,9 @@ export class JobHunterAgent {
 
 function rateLimitedErrorFrom(
   settled: PromiseSettledResult<ScoredJob>[]
-): GeminiRateLimitError | undefined {
+): OpenRouterRateLimitError | undefined {
   for (const result of settled) {
-    if (result.status === "rejected" && isGeminiRateLimitError(result.reason)) {
+    if (result.status === "rejected" && isOpenRouterRateLimitError(result.reason)) {
       return result.reason;
     }
   }
