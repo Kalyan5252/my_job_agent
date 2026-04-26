@@ -222,13 +222,14 @@ export class LLMService {
       throw new Error("OpenRouter client is not initialized");
     }
 
+    const resolvedModel = normalizeOpenRouterModel(model);
     const retries = env.OPENROUTER_RATE_LIMIT_MAX_RETRIES;
     let attempt = 0;
 
     while (true) {
       try {
         const res = await this.openRouterClient.chat.completions.create({
-          model,
+          model: resolvedModel,
           temperature: 0.1,
           messages: [{ role: "user", content: input }]
         });
@@ -371,6 +372,12 @@ function isOpenAiModelNotFound(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   const maybe = error as { code?: string; error?: { code?: string } };
   return maybe.code === "model_not_found" || maybe.error?.code === "model_not_found";
+}
+
+function normalizeOpenRouterModel(model: string): string {
+  if (model === "google/gemma-4-31b") return "google/gemma-4-31b-it";
+  if (model === "google/gemma-4-26b") return "google/gemma-4-26b-a4b-it";
+  return model;
 }
 
 function summarizeLlmError(error: unknown): string {
