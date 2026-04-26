@@ -403,10 +403,11 @@ export class ScraperTool {
   private async scrapeLinkedInGuestApi(query: JobSearchQuery): Promise<NormalizedJob[]> {
     const out: NormalizedJob[] = [];
     const locations = query.filters?.locations?.length ? query.filters.locations.slice(0, 2) : ["India"];
-    const starts = Array.from({ length: 12 }, (_, i) => i * 25);
+    const starts = Array.from({ length: 8 }, (_, i) => i * 25);
 
     for (const loc of locations) {
       let emptyPages = 0;
+      let rateLimitHits = 0;
       for (const start of starts) {
         const apiUrl =
           "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search" +
@@ -414,24 +415,29 @@ export class ScraperTool {
           `&location=${encodeURIComponent(loc)}` +
           "&f_E=1%2C2" +
           `&start=${start}`;
+        const headers = {
+          Accept: "text/html,application/xhtml+xml",
+          "Accept-Language": "en-US,en;q=0.9",
+          Referer:
+            `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(query.role)}` +
+            `&location=${encodeURIComponent(loc)}`,
+          "User-Agent":
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        };
 
-        const html = await this.fetchText(
-          apiUrl,
-          {
-            Accept: "text/html,application/xhtml+xml",
-            "Accept-Language": "en-US,en;q=0.9",
-            Referer:
-              `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(query.role)}` +
-              `&location=${encodeURIComponent(loc)}`,
-            "User-Agent":
-              "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-          },
-          15_000
-        );
-
+        const html = await this.fetchLinkedInGuestPageWithBackoff(apiUrl, headers);
+        if (html === "RATE_LIMITED") {
+          rateLimitHits += 1;
+          if (rateLimitHits >= 2) {
+            this.log(`LinkedIn guest API rate-limited repeatedly for location=${loc}; stopping guest pagination`);
+            break;
+          }
+          continue;
+        }
         if (!html) {
           emptyPages += 1;
           if (emptyPages >= 2) break;
+          await this.sleep(350);
           continue;
         }
 
@@ -439,15 +445,50 @@ export class ScraperTool {
         if (parsed.length === 0) {
           emptyPages += 1;
           if (emptyPages >= 2) break;
+          await this.sleep(350);
           continue;
         }
 
         emptyPages = 0;
+        rateLimitHits = 0;
         out.push(...parsed);
+        await this.sleep(450);
       }
     }
 
     return out;
+  }
+
+  private async fetchLinkedInGuestPageWithBackoff(
+    url: string,
+    headers: Record<string, string>
+  ): Promise<string | "RATE_LIMITED" | null> {
+    const maxAttempts = 3;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const res = await this.fetchWithTimeout(url, 15_000, headers);
+      if (!res) return null;
+
+      if (res.status === 429) {
+        const waitMs = 800 * (attempt + 1) + Math.floor(Math.random() * 300);
+        this.log(`LinkedIn guest API rate-limited (attempt ${attempt + 1}/${maxAttempts}); waiting ${waitMs}ms`);
+        await this.sleep(waitMs);
+        continue;
+      }
+
+      if (!res.ok) {
+        this.log(`LinkedIn guest API failed with status ${res.status}: ${url}`);
+        return null;
+      }
+
+      try {
+        return await res.text();
+      } catch {
+        return null;
+      }
+    }
+
+    this.log(`LinkedIn guest API exhausted retries due to 429: ${url}`);
+    return "RATE_LIMITED";
   }
 
   private parseLinkedInGuestCards(html: string, fallbackLocation: string, query: JobSearchQuery): NormalizedJob[] {
@@ -957,6 +998,10 @@ export class ScraperTool {
 
   private log(message: string): void {
     console.log(`[scraper] ${message}`);
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   private sourceBreakdown(jobs: JobPosting[]): Record<string, number> {
