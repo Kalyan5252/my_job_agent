@@ -64,7 +64,11 @@ export class LLMService {
       }
 
       const score = this.fallbackScore(profile, `${job.title} ${job.description}`);
-      return { score, reasoning: "fallback keyword score (llm request failed)" };
+      const detail = summarizeLlmError(error);
+      console.warn(
+        `[llm] scoreJob failed provider=${env.AI_PROVIDER} model=${this.modelFor("jobScoring", env.AI_PROVIDER)} detail=${detail}`
+      );
+      return { score, reasoning: `fallback keyword score (llm request failed: ${compactDetail(detail)})` };
     }
 
     const parsed = safeParseJson<{ score: number; reasoning: string }>(text);
@@ -163,7 +167,23 @@ export class LLMService {
 
   private async createResponseWithFallback(task: LlmTask, input: string): Promise<string> {
     if (env.AI_PROVIDER === "openrouter") {
-      return await this.createOpenRouterResponse(input, this.modelFor(task, "openrouter"));
+      try {
+        return await this.createOpenRouterResponse(input, this.modelFor(task, "openrouter"));
+      } catch (error) {
+        if (isOpenRouterRateLimitError(error)) {
+          throw error;
+        }
+
+        if (this.openAiClient) {
+          const { primary, fallback } = this.openAiModelsFor(task);
+          console.warn(
+            `[llm] OpenRouter failed for task=${task}; falling back to OpenAI. detail=${summarizeLlmError(error)}`
+          );
+          return await this.createOpenAiResponse(input, primary, fallback);
+        }
+
+        throw error;
+      }
     }
 
     const { primary, fallback } = this.openAiModelsFor(task);
@@ -351,4 +371,40 @@ function isOpenAiModelNotFound(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   const maybe = error as { code?: string; error?: { code?: string } };
   return maybe.code === "model_not_found" || maybe.error?.code === "model_not_found";
+}
+
+function summarizeLlmError(error: unknown): string {
+  if (!error) return "unknown error";
+  if (typeof error === "string") return error;
+  if (error instanceof Error) {
+    const maybe = error as Error & {
+      status?: number;
+      code?: string;
+      error?: { message?: string; code?: string; type?: string };
+    };
+    const parts = [
+      maybe.status ? `status=${maybe.status}` : "",
+      maybe.code ? `code=${maybe.code}` : "",
+      maybe.error?.code ? `api_code=${maybe.error.code}` : "",
+      maybe.error?.type ? `type=${maybe.error.type}` : "",
+      maybe.error?.message || maybe.message
+    ].filter(Boolean);
+    return parts.join(" | ");
+  }
+
+  if (typeof error === "object") {
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return "non-serializable error object";
+    }
+  }
+
+  return String(error);
+}
+
+function compactDetail(input: string, max = 120): string {
+  const normalized = input.replace(/\s+/g, " ").trim();
+  if (normalized.length <= max) return normalized;
+  return `${normalized.slice(0, max - 3)}...`;
 }
