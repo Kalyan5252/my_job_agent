@@ -1,12 +1,12 @@
-import { FieldAnswer, FormField } from "../types";
+import { FieldAnswer, FormField } from '../types';
 
 export class FormFillerTool {
   toAnswers(fields: FormField[], mappedValues: Record<string, string>): FieldAnswer[] {
     return fields
-      .filter((field) => (field.name || "").trim().length > 0)
+      .filter((field) => (field.name || '').trim().length > 0)
       .map((field) => ({
         fieldName: field.name,
-        value: mappedValues[field.name] ?? ""
+        value: mappedValues[field.name] ?? '',
       }));
   }
 

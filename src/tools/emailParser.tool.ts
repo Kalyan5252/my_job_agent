@@ -1,6 +1,6 @@
-import Imap from "imap";
-import { simpleParser } from "mailparser";
-import { env } from "../config/env";
+import Imap from 'imap';
+import { simpleParser } from 'mailparser';
+import { env } from '../config/env';
 
 export interface ParsedEmail {
   subject: string;
@@ -22,17 +22,17 @@ export class EmailParserTool {
         password: env.IMAP_PASSWORD!,
         host: env.IMAP_HOST,
         port: env.IMAP_PORT,
-        tls: env.IMAP_TLS
+        tls: env.IMAP_TLS,
       });
 
-      imap.once("ready", () => {
-        imap.openBox("INBOX", true, (err) => {
+      imap.once('ready', () => {
+        imap.openBox('INBOX', true, (err) => {
           if (err) {
             reject(err);
             return;
           }
 
-          imap.search(["ALL"], (searchErr, results) => {
+          imap.search(['ALL'], (searchErr, results) => {
             if (searchErr) {
               reject(searchErr);
               return;
@@ -45,25 +45,25 @@ export class EmailParserTool {
               return;
             }
 
-            const fetcher = imap.fetch(latest, { bodies: "" });
+            const fetcher = imap.fetch(latest, { bodies: '' });
 
-            fetcher.on("message", (msg) => {
-              let raw = "";
+            fetcher.on('message', (msg) => {
+              let raw = '';
 
-              msg.on("body", (stream) => {
-                stream.on("data", (chunk) => {
-                  raw += chunk.toString("utf8");
+              msg.on('body', (stream) => {
+                stream.on('data', (chunk) => {
+                  raw += chunk.toString('utf8');
                 });
               });
 
-              msg.once("end", async () => {
+              msg.once('end', async () => {
                 try {
                   const parsed = await simpleParser(raw);
                   emails.push({
-                    subject: parsed.subject || "",
-                    from: parsed.from?.text || "",
-                    text: parsed.text || parsed.html || "",
-                    receivedAt: parsed.date || new Date()
+                    subject: parsed.subject || '',
+                    from: parsed.from?.text || '',
+                    text: parsed.text || parsed.html || '',
+                    receivedAt: parsed.date || new Date(),
                   });
                 } catch {
                   // Ignore malformed messages; continue parsing the rest.
@@ -71,8 +71,8 @@ export class EmailParserTool {
               });
             });
 
-            fetcher.once("error", reject);
-            fetcher.once("end", () => {
+            fetcher.once('error', reject);
+            fetcher.once('end', () => {
               imap.end();
               resolve(emails);
             });
@@ -80,7 +80,7 @@ export class EmailParserTool {
         });
       });
 
-      imap.once("error", reject);
+      imap.once('error', reject);
       imap.connect();
     });
   }

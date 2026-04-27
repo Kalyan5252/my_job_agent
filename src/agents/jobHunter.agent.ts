@@ -1,11 +1,11 @@
-import { jobsCollection } from "../db/mongo/client";
-import { enqueueApplication } from "../queues/apply.queue";
-import { env } from "../config/env";
-import { LLMService } from "../services/llm.service";
-import { OpenRouterRateLimitError, isOpenRouterRateLimitError } from "../services/llm.service";
-import { ScoringService } from "../services/scoring.service";
-import { ScraperTool } from "../tools/scraper.tool";
-import { DiscoveryDiagnostics, JobPosting, JobProfile, JobSearchQuery, ScoredJob } from "../types";
+import { jobsCollection } from '../db/mongo/client';
+import { enqueueApplication } from '../queues/apply.queue';
+import { env } from '../config/env';
+import { LLMService } from '../services/llm.service';
+import { OpenRouterRateLimitError, isOpenRouterRateLimitError } from '../services/llm.service';
+import { ScoringService } from '../services/scoring.service';
+import { ScraperTool } from '../tools/scraper.tool';
+import { DiscoveryDiagnostics, JobPosting, JobProfile, JobSearchQuery, ScoredJob } from '../types';
 
 export class JobHunterAgent {
   private readonly scraper = new ScraperTool();
@@ -14,7 +14,7 @@ export class JobHunterAgent {
 
   async run(
     profile: JobProfile,
-    searchQuery?: Partial<JobSearchQuery>
+    searchQuery?: Partial<JobSearchQuery>,
   ): Promise<{ jobs: ScoredJob[]; diagnostics: DiscoveryDiagnostics }> {
     const jobs = await this.scraper.fetchJobs({
       role: searchQuery?.role || profile.role,
@@ -22,7 +22,7 @@ export class JobHunterAgent {
       location: searchQuery?.location,
       filters: searchQuery?.filters,
       priority: searchQuery?.priority,
-      maxResults: searchQuery?.maxResults
+      maxResults: searchQuery?.maxResults,
     });
     const scored = await this.scoreJobs(profile, jobs);
 
@@ -38,7 +38,7 @@ export class JobHunterAgent {
 
     return {
       jobs: scored,
-      diagnostics: this.scraper.getLastDiagnostics()
+      diagnostics: this.scraper.getLastDiagnostics(),
     };
   }
 
@@ -52,14 +52,14 @@ export class JobHunterAgent {
     while (queue.length > 0) {
       const currentBatch = queue.splice(0, batchSize);
       const settled = await Promise.allSettled(
-        currentBatch.map(async ({ job }) => this.scoring.scoreAndDecide(profile, job))
+        currentBatch.map(async ({ job }) => this.scoring.scoreAndDecide(profile, job)),
       );
 
       const rateLimited: Array<(typeof currentBatch)[number]> = [];
 
       settled.forEach((result, offset) => {
         const item = currentBatch[offset];
-        if (result.status === "fulfilled") {
+        if (result.status === 'fulfilled') {
           results[item.index] = result.value;
           return;
         }
@@ -73,7 +73,7 @@ export class JobHunterAgent {
           ...item.job,
           score: 70,
           apply: true,
-          reasoning: "fallback decision (scoring failed)"
+          reasoning: 'fallback decision (scoring failed)',
         };
       });
 
@@ -86,13 +86,13 @@ export class JobHunterAgent {
             ...item.job,
             score: 70,
             apply: true,
-            reasoning: "fallback decision (openrouter rate limited)"
+            reasoning: 'fallback decision (openrouter rate limited)',
           };
         } else {
           queue.unshift(...rateLimited);
           batchSize = Math.max(
             1,
-            Math.min(env.DISCOVERY_SCORE_RATE_LIMIT_BATCH_SIZE, Math.ceil(batchSize / 2))
+            Math.min(env.DISCOVERY_SCORE_RATE_LIMIT_BATCH_SIZE, Math.ceil(batchSize / 2)),
           );
           await this.sleep(env.DISCOVERY_SCORE_BATCH_DELAY_MS);
         }
@@ -114,10 +114,10 @@ export class JobHunterAgent {
 }
 
 function rateLimitedErrorFrom(
-  settled: PromiseSettledResult<ScoredJob>[]
+  settled: PromiseSettledResult<ScoredJob>[],
 ): OpenRouterRateLimitError | undefined {
   for (const result of settled) {
-    if (result.status === "rejected" && isOpenRouterRateLimitError(result.reason)) {
+    if (result.status === 'rejected' && isOpenRouterRateLimitError(result.reason)) {
       return result.reason;
     }
   }

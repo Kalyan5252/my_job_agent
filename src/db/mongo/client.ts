@@ -1,6 +1,6 @@
-import { Collection, Db, MongoClient } from "mongodb";
-import { env } from "../../config/env";
-import { ScoredJob } from "../../types";
+import { Collection, Db, MongoClient } from 'mongodb';
+import { env } from '../../config/env';
+import { ScoredJob } from '../../types';
 
 let mongoClient: MongoClient | null = null;
 let db: Db | null = null;
@@ -16,7 +16,7 @@ export async function connectMongo(): Promise<Db> {
 
 export async function jobsCollection(): Promise<Collection<ScoredJob>> {
   const database = await connectMongo();
-  return database.collection<ScoredJob>("jobs");
+  return database.collection<ScoredJob>('jobs');
 }
 
 export async function closeMongo(): Promise<void> {

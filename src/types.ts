@@ -1,4 +1,4 @@
-export type ExperienceLevel = "fresher" | "junior" | "mid" | "senior";
+export type ExperienceLevel = 'fresher' | 'junior' | 'mid' | 'senior';
 
 export interface JobProfile {
   role: string;
@@ -17,7 +17,7 @@ export interface JobSearchFilters {
   maxExperienceYears?: number;
 }
 
-export type CompanyTier = "top" | "mid" | "other";
+export type CompanyTier = 'top' | 'mid' | 'other';
 
 export interface JobSearchPriority {
   companyTierOrder?: CompanyTier[];
@@ -34,8 +34,8 @@ export interface JobSearchQuery {
 }
 
 export interface DiscoveryFinding {
-  stage: "source" | "filter" | "result";
-  severity: "info" | "warning" | "error";
+  stage: 'source' | 'filter' | 'result';
+  severity: 'info' | 'warning' | 'error';
   code: string;
   message: string;
   meta?: Record<string, unknown>;
@@ -85,15 +85,15 @@ export interface ScoredJob extends JobPosting {
 }
 
 export type ApplicationStatus =
-  | "queued"
-  | "in_progress"
-  | "draft_filled"
-  | "needs_human"
-  | "applied"
-  | "rejected"
-  | "interview"
-  | "failed"
-  | "unknown";
+  | 'queued'
+  | 'in_progress'
+  | 'draft_filled'
+  | 'needs_human'
+  | 'applied'
+  | 'rejected'
+  | 'interview'
+  | 'failed'
+  | 'unknown';
 
 export interface ApplicationRecord {
   id?: string;
@@ -121,9 +121,9 @@ export interface FieldAnswer {
 }
 
 export interface ApplicationRunOptions {
-  mode?: "dry-run" | "submit";
+  mode?: 'dry-run' | 'submit';
   preview?: boolean;
-  authMode?: "auto" | "google" | "linkedin";
+  authMode?: 'auto' | 'google' | 'linkedin';
   captchaHandoff?: boolean;
   captchaHandoffTimeoutMs?: number;
   keepBrowserOpenAfterSubmit?: boolean;
@@ -134,19 +134,19 @@ export interface ApplicationRunResult {
   status: ApplicationStatus;
   message: string;
   errorCode?:
-    | "LINKEDIN_AUTH_NOT_CONFIGURED"
-    | "LINKEDIN_SESSION_EXPIRED"
-    | "GOOGLE_AUTH_NOT_CONFIGURED"
-    | "GOOGLE_SESSION_EXPIRED"
-    | "GOOGLE_AUTH_REQUIRED"
-    | "CAPTCHA_BLOCKED"
-    | "LINKEDIN_MODAL_NOT_OPENED"
-    | "EXTERNAL_APPLY_REDIRECT"
-    | "NO_FORM_FIELDS"
-    | "FORM_VALIDATION_FAILED"
-    | "SUBMIT_NOT_CONFIRMED"
-    | "UNKNOWN";
-  stage: "precheck" | "extract" | "map" | "validate" | "fill" | "submit" | "done";
+    | 'LINKEDIN_AUTH_NOT_CONFIGURED'
+    | 'LINKEDIN_SESSION_EXPIRED'
+    | 'GOOGLE_AUTH_NOT_CONFIGURED'
+    | 'GOOGLE_SESSION_EXPIRED'
+    | 'GOOGLE_AUTH_REQUIRED'
+    | 'CAPTCHA_BLOCKED'
+    | 'LINKEDIN_MODAL_NOT_OPENED'
+    | 'EXTERNAL_APPLY_REDIRECT'
+    | 'NO_FORM_FIELDS'
+    | 'FORM_VALIDATION_FAILED'
+    | 'SUBMIT_NOT_CONFIRMED'
+    | 'UNKNOWN';
+  stage: 'precheck' | 'extract' | 'map' | 'validate' | 'fill' | 'submit' | 'done';
   filledCount?: number;
   requiredFieldCount?: number;
   missingRequiredFields?: string[];
