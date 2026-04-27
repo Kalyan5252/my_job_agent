@@ -1,15 +1,15 @@
-import fs from "node:fs";
-import path from "node:path";
-import { chromium, type BrowserContextOptions, type Locator, type Page } from "playwright";
-import { env } from "../config/env";
-import { FieldAnswer, FormField } from "../types";
+import fs from 'node:fs';
+import path from 'node:path';
+import { chromium, type BrowserContextOptions, type Locator, type Page } from 'playwright';
+import { env } from '../config/env';
+import { FieldAnswer, FormField } from '../types';
 
 interface FillFormResult {
   filledCount: number;
   missingSelectors: string[];
   targetUrl?: string;
   previewScreenshots?: string[];
-  blockerCode?: "CAPTCHA_BLOCKED";
+  blockerCode?: 'CAPTCHA_BLOCKED';
   blockerReason?: string;
 }
 
@@ -26,15 +26,15 @@ interface AnswerResolution {
 
 interface NoFieldsDiagnosis {
   code:
-    | "CAPTCHA_BLOCKED"
-    | "LINKEDIN_AUTH_NOT_CONFIGURED"
-    | "LINKEDIN_SESSION_EXPIRED"
-    | "GOOGLE_AUTH_NOT_CONFIGURED"
-    | "GOOGLE_SESSION_EXPIRED"
-    | "GOOGLE_AUTH_REQUIRED"
-    | "LINKEDIN_MODAL_NOT_OPENED"
-    | "EXTERNAL_APPLY_REDIRECT"
-    | "NO_FORM_FIELDS";
+    | 'CAPTCHA_BLOCKED'
+    | 'LINKEDIN_AUTH_NOT_CONFIGURED'
+    | 'LINKEDIN_SESSION_EXPIRED'
+    | 'GOOGLE_AUTH_NOT_CONFIGURED'
+    | 'GOOGLE_SESSION_EXPIRED'
+    | 'GOOGLE_AUTH_REQUIRED'
+    | 'LINKEDIN_MODAL_NOT_OPENED'
+    | 'EXTERNAL_APPLY_REDIRECT'
+    | 'NO_FORM_FIELDS';
   reason: string;
   hint?: string;
 }
@@ -43,7 +43,7 @@ interface PageRunOptions {
   headless?: boolean;
   useLinkedInAuth?: boolean;
   useGoogleAuth?: boolean;
-  authMode?: "auto" | "google" | "linkedin";
+  authMode?: 'auto' | 'google' | 'linkedin';
   preview?: boolean;
   captchaHandoff?: boolean;
   captchaHandoffTimeoutMs?: number;
@@ -62,23 +62,29 @@ interface IdentityContext {
 }
 
 export class BrowserTool {
-  async withPage<T>(url: string, action: (page: Page) => Promise<T>, options: PageRunOptions = {}): Promise<T> {
+  async withPage<T>(
+    url: string,
+    action: (page: Page) => Promise<T>,
+    options: PageRunOptions = {},
+  ): Promise<T> {
     const preview = options.preview ?? false;
     const requiresInteractiveBrowser = preview || Boolean(options.captchaHandoff);
     const browser = await chromium.launch({
       headless: requiresInteractiveBrowser ? false : (options.headless ?? true),
-      slowMo: preview ? 120 : 0
+      slowMo: preview ? 120 : 0,
     });
     const context = await browser.newContext(this.resolveContextOptions(url, options));
     const page = await context.newPage();
 
     try {
-      await page.goto(url, { waitUntil: "domcontentloaded" });
+      await page.goto(url, { waitUntil: 'domcontentloaded' });
       return await action(page);
     } finally {
       if (options.keepBrowserOpenAfterSubmit) {
         const holdMs = Math.max(5_000, Math.min(options.keepBrowserOpenMs ?? 180_000, 900_000));
-        this.log(`post-submit hold enabled; keeping browser open for ${Math.round(holdMs / 1000)}s`);
+        this.log(
+          `post-submit hold enabled; keeping browser open for ${Math.round(holdMs / 1000)}s`,
+        );
         await page.waitForTimeout(holdMs);
       }
       await page.close();
@@ -91,10 +97,10 @@ export class BrowserTool {
     url: string,
     options: {
       preview?: boolean;
-      authMode?: "auto" | "google" | "linkedin";
+      authMode?: 'auto' | 'google' | 'linkedin';
       captchaHandoff?: boolean;
       captchaHandoffTimeoutMs?: number;
-    } = {}
+    } = {},
   ): Promise<FormField[]> {
     return this.withPage(
       url,
@@ -104,7 +110,9 @@ export class BrowserTool {
         if (this.isLinkedIn(url) && this.shouldUseLinkedInAuth()) {
           const opened = await this.openLinkedInEasyApplyModal(page);
           if (opened) {
-            const modalFields = await this.extractFieldsFromLocator(page.locator('[role="dialog"]').last());
+            const modalFields = await this.extractFieldsFromLocator(
+              page.locator('[role="dialog"]').last(),
+            );
             if (modalFields.length > 0) return modalFields;
           }
 
@@ -124,8 +132,8 @@ export class BrowserTool {
         authMode: options.authMode,
         preview: options.preview,
         captchaHandoff: options.captchaHandoff,
-        captchaHandoffTimeoutMs: options.captchaHandoffTimeoutMs
-      }
+        captchaHandoffTimeoutMs: options.captchaHandoffTimeoutMs,
+      },
     );
   }
 
@@ -133,94 +141,99 @@ export class BrowserTool {
     url: string,
     options: {
       preview?: boolean;
-      authMode?: "auto" | "google" | "linkedin";
+      authMode?: 'auto' | 'google' | 'linkedin';
       captchaHandoff?: boolean;
       captchaHandoffTimeoutMs?: number;
-    } = {}
+    } = {},
   ): Promise<NoFieldsDiagnosis> {
     return this.withPage(
       url,
       async (page) => {
         await page.waitForTimeout(1_500);
         const currentUrl = page.url().toLowerCase();
-        const body = (await page.textContent("body"))?.toLowerCase() || "";
+        const body = (await page.textContent('body'))?.toLowerCase() || '';
 
-        const linkedin = currentUrl.includes("linkedin.com");
+        const linkedin = currentUrl.includes('linkedin.com');
         const hasSignInForm =
-          (await page.locator('input[name="session_key"], input#username, input[name="session_password"]').count()) >
-          0;
-        const hasEasyApplyButton = (await page.locator('button:has-text("Easy Apply")').count()) > 0;
-        const hasApplyButton = (await page.locator('a:has-text("Apply"), button:has-text("Apply")').count()) > 0;
+          (await page
+            .locator('input[name="session_key"], input#username, input[name="session_password"]')
+            .count()) > 0;
+        const hasEasyApplyButton =
+          (await page.locator('button:has-text("Easy Apply")').count()) > 0;
+        const hasApplyButton =
+          (await page.locator('a:has-text("Apply"), button:has-text("Apply")').count()) > 0;
         const hasCaptchaHint =
-          body.includes("captcha") || body.includes("security verification") || body.includes("verify you are human");
+          body.includes('captcha') ||
+          body.includes('security verification') ||
+          body.includes('verify you are human');
 
         if (hasCaptchaHint) {
           return {
-            code: "CAPTCHA_BLOCKED",
-            reason: "Blocked by CAPTCHA or security verification",
-            hint: "Open this URL manually, complete verification, then retry."
+            code: 'CAPTCHA_BLOCKED',
+            reason: 'Blocked by CAPTCHA or security verification',
+            hint: 'Open this URL manually, complete verification, then retry.',
           };
         }
 
         if (linkedin && !this.hasLinkedInAuthState()) {
           return {
-            code: "LINKEDIN_AUTH_NOT_CONFIGURED",
-            reason: "LinkedIn authenticated session not configured",
-            hint: "Run `npm run auth:linkedin` once, then retry."
+            code: 'LINKEDIN_AUTH_NOT_CONFIGURED',
+            reason: 'LinkedIn authenticated session not configured',
+            hint: 'Run `npm run auth:linkedin` once, then retry.',
           };
         }
 
         if (linkedin && hasSignInForm) {
           return {
-            code: "LINKEDIN_SESSION_EXPIRED",
-            reason: "LinkedIn login required before accessing application form",
-            hint: "Refresh LinkedIn session via `npm run auth:linkedin` and retry."
+            code: 'LINKEDIN_SESSION_EXPIRED',
+            reason: 'LinkedIn login required before accessing application form',
+            hint: 'Refresh LinkedIn session via `npm run auth:linkedin` and retry.',
           };
         }
 
         const googleAuth = await this.isGoogleAuthContext(page);
         if (googleAuth && !this.hasGoogleAuthState()) {
           return {
-            code: "GOOGLE_AUTH_NOT_CONFIGURED",
-            reason: "Google authenticated session not configured",
-            hint: "Run `npm run auth:google` once, then retry."
+            code: 'GOOGLE_AUTH_NOT_CONFIGURED',
+            reason: 'Google authenticated session not configured',
+            hint: 'Run `npm run auth:google` once, then retry.',
           };
         }
         if (googleAuth && hasSignInForm) {
           return {
-            code: "GOOGLE_SESSION_EXPIRED",
-            reason: "Google login required before accessing application form",
-            hint: "Refresh Google session via `npm run auth:google` and retry."
+            code: 'GOOGLE_SESSION_EXPIRED',
+            reason: 'Google login required before accessing application form',
+            hint: 'Refresh Google session via `npm run auth:google` and retry.',
           };
         }
         if (googleAuth) {
           return {
-            code: "GOOGLE_AUTH_REQUIRED",
-            reason: "Application flow requires Google sign-in",
-            hint: "Use saved Google session or refresh it via `npm run auth:google`."
+            code: 'GOOGLE_AUTH_REQUIRED',
+            reason: 'Application flow requires Google sign-in',
+            hint: 'Use saved Google session or refresh it via `npm run auth:google`.',
           };
         }
 
         if (linkedin && hasEasyApplyButton) {
           return {
-            code: "LINKEDIN_MODAL_NOT_OPENED",
-            reason: "Easy Apply button detected, but no input fields in current DOM",
-            hint: "The form likely appears inside a post-click modal/stepper flow."
+            code: 'LINKEDIN_MODAL_NOT_OPENED',
+            reason: 'Easy Apply button detected, but no input fields in current DOM',
+            hint: 'The form likely appears inside a post-click modal/stepper flow.',
           };
         }
 
         if (hasApplyButton) {
           return {
-            code: "EXTERNAL_APPLY_REDIRECT",
-            reason: "Apply action exists but form fields are not present on this page",
-            hint: "This job likely redirects to an external ATS site after clicking Apply."
+            code: 'EXTERNAL_APPLY_REDIRECT',
+            reason: 'Apply action exists but form fields are not present on this page',
+            hint: 'This job likely redirects to an external ATS site after clicking Apply.',
           };
         }
 
         return {
-          code: "NO_FORM_FIELDS",
-          reason: "No detectable form fields on page",
-          hint: "Page structure may be dynamic/unsupported. Needs human-assisted flow."
+          code: 'NO_FORM_FIELDS',
+          reason: 'No detectable form fields on page',
+          hint: 'Page structure may be dynamic/unsupported. Needs human-assisted flow.',
         };
       },
       {
@@ -229,8 +242,8 @@ export class BrowserTool {
         authMode: options.authMode,
         preview: options.preview,
         captchaHandoff: options.captchaHandoff,
-        captchaHandoffTimeoutMs: options.captchaHandoffTimeoutMs
-      }
+        captchaHandoffTimeoutMs: options.captchaHandoffTimeoutMs,
+      },
     );
   }
 
@@ -239,10 +252,10 @@ export class BrowserTool {
     answers: FieldAnswer[],
     options: {
       preview?: boolean;
-      authMode?: "auto" | "google" | "linkedin";
+      authMode?: 'auto' | 'google' | 'linkedin';
       captchaHandoff?: boolean;
       captchaHandoffTimeoutMs?: number;
-    } = {}
+    } = {},
   ): Promise<FillFormResult> {
     return this.withPage(
       url,
@@ -257,22 +270,29 @@ export class BrowserTool {
 
           const externalPage = await this.openLinkedInExternalApply(page);
           if (externalPage) {
-            if (options.preview) previews.push(await this.capturePreview(externalPage, "external-opened"));
+            if (options.preview)
+              previews.push(await this.capturePreview(externalPage, 'external-opened'));
             const activePage = await this.prepareExternalApplyPage(externalPage);
-            if (options.preview) previews.push(await this.capturePreview(activePage, "external-apply-clicked"));
+            if (options.preview)
+              previews.push(await this.capturePreview(activePage, 'external-apply-clicked'));
             const fill = await this.fillAnswersOnPage(activePage, answers);
-            if (options.preview) previews.push(await this.capturePreview(activePage, "external-filled"));
+            if (options.preview)
+              previews.push(await this.capturePreview(activePage, 'external-filled'));
             return {
               ...fill,
               targetUrl: activePage.url(),
-              previewScreenshots: previews.filter(Boolean)
+              previewScreenshots: previews.filter(Boolean),
             };
           }
         }
 
         const fill = await this.fillAnswersOnPage(page, answers);
-        if (options.preview) previews.push(await this.capturePreview(page, "filled"));
-        return { ...fill, targetUrl: page.url(), previewScreenshots: previews.filter(Boolean) };
+        if (options.preview) previews.push(await this.capturePreview(page, 'filled'));
+        return {
+          ...fill,
+          targetUrl: page.url(),
+          previewScreenshots: previews.filter(Boolean),
+        };
       },
       {
         useLinkedInAuth: this.isLinkedIn(url),
@@ -280,8 +300,8 @@ export class BrowserTool {
         authMode: options.authMode,
         preview: options.preview,
         captchaHandoff: options.captchaHandoff,
-        captchaHandoffTimeoutMs: options.captchaHandoffTimeoutMs
-      }
+        captchaHandoffTimeoutMs: options.captchaHandoffTimeoutMs,
+      },
     );
   }
 
@@ -290,12 +310,12 @@ export class BrowserTool {
     answers: FieldAnswer[],
     options: {
       preview?: boolean;
-      authMode?: "auto" | "google" | "linkedin";
+      authMode?: 'auto' | 'google' | 'linkedin';
       captchaHandoff?: boolean;
       captchaHandoffTimeoutMs?: number;
       keepBrowserOpenAfterSubmit?: boolean;
       keepBrowserOpenMs?: number;
-    } = {}
+    } = {},
   ): Promise<FillFormResult & SubmitResult> {
     return this.withPage(
       url,
@@ -306,27 +326,35 @@ export class BrowserTool {
           const opened = await this.openLinkedInEasyApplyModal(page);
           if (opened) {
             const result = await this.processLinkedInEasyApplyFlow(page, answers, true);
-            return { ...result, targetUrl: page.url(), previewScreenshots: previews };
+            return {
+              ...result,
+              targetUrl: page.url(),
+              previewScreenshots: previews,
+            };
           }
 
           const externalPage = await this.openLinkedInExternalApply(page);
           if (externalPage) {
-            if (options.preview) previews.push(await this.capturePreview(externalPage, "external-opened"));
+            if (options.preview)
+              previews.push(await this.capturePreview(externalPage, 'external-opened'));
             const activePage = await this.prepareExternalApplyPage(externalPage);
-            if (options.preview) previews.push(await this.capturePreview(activePage, "external-apply-clicked"));
+            if (options.preview)
+              previews.push(await this.capturePreview(activePage, 'external-apply-clicked'));
             const fill = await this.fillAnswersOnPage(activePage, answers);
-            if (options.preview) previews.push(await this.capturePreview(activePage, "external-filled"));
+            if (options.preview)
+              previews.push(await this.capturePreview(activePage, 'external-filled'));
             const submit = await this.tryExternalSubmit(activePage, {
               ...options,
-              resumePath: identity.resumePath
+              resumePath: identity.resumePath,
             });
-            if (options.preview) previews.push(await this.capturePreview(activePage, "external-submitted"));
+            if (options.preview)
+              previews.push(await this.capturePreview(activePage, 'external-submitted'));
             return {
               ...fill,
               submitted: submit.submitted,
               reason: submit.reason,
               targetUrl: activePage.url(),
-              previewScreenshots: previews.filter(Boolean)
+              previewScreenshots: previews.filter(Boolean),
             };
           }
         }
@@ -334,15 +362,15 @@ export class BrowserTool {
         const fill = await this.fillAnswersOnPage(page, answers);
         const submit = await this.trySubmit(page, {
           ...options,
-          resumePath: identity.resumePath
+          resumePath: identity.resumePath,
         });
-        if (options.preview) previews.push(await this.capturePreview(page, "submitted"));
+        if (options.preview) previews.push(await this.capturePreview(page, 'submitted'));
         return {
           ...fill,
           submitted: submit.submitted,
           reason: submit.reason,
           targetUrl: page.url(),
-          previewScreenshots: previews.filter(Boolean)
+          previewScreenshots: previews.filter(Boolean),
         };
       },
       {
@@ -353,8 +381,8 @@ export class BrowserTool {
         captchaHandoff: options.captchaHandoff,
         captchaHandoffTimeoutMs: options.captchaHandoffTimeoutMs,
         keepBrowserOpenAfterSubmit: options.keepBrowserOpenAfterSubmit,
-        keepBrowserOpenMs: options.keepBrowserOpenMs
-      }
+        keepBrowserOpenMs: options.keepBrowserOpenMs,
+      },
     );
   }
 
@@ -363,12 +391,12 @@ export class BrowserTool {
     resolver: (fields: FormField[]) => Promise<AnswerResolution>,
     options: {
       preview?: boolean;
-      authMode?: "auto" | "google" | "linkedin";
+      authMode?: 'auto' | 'google' | 'linkedin';
       captchaHandoff?: boolean;
       captchaHandoffTimeoutMs?: number;
       keepBrowserOpenAfterSubmit?: boolean;
       keepBrowserOpenMs?: number;
-    } = {}
+    } = {},
   ): Promise<{
     fields: FormField[];
     result: FillFormResult & SubmitResult;
@@ -383,7 +411,7 @@ export class BrowserTool {
 
         const runOnPage = async (
           activePage: Page,
-          external: boolean
+          external: boolean,
         ): Promise<{
           fields: FormField[];
           result: FillFormResult & SubmitResult;
@@ -396,12 +424,12 @@ export class BrowserTool {
               fields,
               result: {
                 submitted: false,
-                reason: "No form fields discovered on application page",
+                reason: 'No form fields discovered on application page',
                 filledCount: 0,
                 missingSelectors: [],
                 targetUrl: activePage.url(),
-                previewScreenshots: previews.filter(Boolean)
-              }
+                previewScreenshots: previews.filter(Boolean),
+              },
             };
           }
 
@@ -413,27 +441,33 @@ export class BrowserTool {
               missingRequiredFields: resolved.missingRequiredFields,
               result: {
                 submitted: false,
-                reason: "Validation failed for required fields",
+                reason: 'Validation failed for required fields',
                 filledCount: 0,
                 missingSelectors: [],
                 targetUrl: activePage.url(),
-                previewScreenshots: previews.filter(Boolean)
-              }
+                previewScreenshots: previews.filter(Boolean),
+              },
             };
           }
 
           const fill = await this.fillAnswersOnPage(activePage, resolved.answers);
           const submit = external
-            ? await this.tryExternalSubmit(activePage, { ...options, resumePath: identity.resumePath })
-            : await this.trySubmit(activePage, { ...options, resumePath: identity.resumePath });
+            ? await this.tryExternalSubmit(activePage, {
+                ...options,
+                resumePath: identity.resumePath,
+              })
+            : await this.trySubmit(activePage, {
+                ...options,
+                resumePath: identity.resumePath,
+              });
           return {
             fields,
             result: {
               ...fill,
               ...submit,
               targetUrl: activePage.url(),
-              previewScreenshots: previews.filter(Boolean)
-            }
+              previewScreenshots: previews.filter(Boolean),
+            },
           };
         };
 
@@ -447,12 +481,12 @@ export class BrowserTool {
                 fields,
                 result: {
                   submitted: false,
-                  reason: "No form fields discovered on application page",
+                  reason: 'No form fields discovered on application page',
                   filledCount: 0,
                   missingSelectors: [],
                   targetUrl: page.url(),
-                  previewScreenshots: previews
-                }
+                  previewScreenshots: previews,
+                },
               };
             }
 
@@ -464,12 +498,12 @@ export class BrowserTool {
                 missingRequiredFields: resolved.missingRequiredFields,
                 result: {
                   submitted: false,
-                  reason: "Validation failed for required fields",
+                  reason: 'Validation failed for required fields',
                   filledCount: 0,
                   missingSelectors: [],
                   targetUrl: page.url(),
-                  previewScreenshots: previews
-                }
+                  previewScreenshots: previews,
+                },
               };
             }
             const easyApply = await this.processLinkedInEasyApplyFlow(page, resolved.answers, true);
@@ -478,26 +512,29 @@ export class BrowserTool {
               result: {
                 ...easyApply,
                 targetUrl: page.url(),
-                previewScreenshots: previews.filter(Boolean)
-              }
+                previewScreenshots: previews.filter(Boolean),
+              },
             };
           }
 
           const externalPage = await this.openLinkedInExternalApply(page);
           if (externalPage) {
-            if (options.preview) previews.push(await this.capturePreview(externalPage, "external-opened"));
+            if (options.preview)
+              previews.push(await this.capturePreview(externalPage, 'external-opened'));
             const activePage = await this.prepareExternalApplyPage(externalPage);
-            if (options.preview) previews.push(await this.capturePreview(activePage, "external-apply-clicked"));
+            if (options.preview)
+              previews.push(await this.capturePreview(activePage, 'external-apply-clicked'));
             const done = await runOnPage(activePage, true);
-            if (options.preview) previews.push(await this.capturePreview(activePage, "external-submitted"));
+            if (options.preview)
+              previews.push(await this.capturePreview(activePage, 'external-submitted'));
             done.result.previewScreenshots = previews.filter(Boolean);
             return done;
           }
         }
 
-        if (options.preview) previews.push(await this.capturePreview(page, "opened"));
+        if (options.preview) previews.push(await this.capturePreview(page, 'opened'));
         const done = await runOnPage(page, false);
-        if (options.preview) previews.push(await this.capturePreview(page, "submitted"));
+        if (options.preview) previews.push(await this.capturePreview(page, 'submitted'));
         done.result.previewScreenshots = previews.filter(Boolean);
         return done;
       },
@@ -509,8 +546,8 @@ export class BrowserTool {
         captchaHandoff: options.captchaHandoff,
         captchaHandoffTimeoutMs: options.captchaHandoffTimeoutMs,
         keepBrowserOpenAfterSubmit: options.keepBrowserOpenAfterSubmit,
-        keepBrowserOpenMs: options.keepBrowserOpenMs
-      }
+        keepBrowserOpenMs: options.keepBrowserOpenMs,
+      },
     );
   }
 
@@ -524,60 +561,61 @@ export class BrowserTool {
     return fs.existsSync(this.googleStorageStatePath());
   }
 
-  async detectLinkedInAuthState(url: string): Promise<"ok" | "expired" | "missing_auth"> {
-    if (!this.isLinkedIn(url)) return "ok";
-    if (!this.hasLinkedInAuthState()) return "missing_auth";
+  async detectLinkedInAuthState(url: string): Promise<'ok' | 'expired' | 'missing_auth'> {
+    if (!this.isLinkedIn(url)) return 'ok';
+    if (!this.hasLinkedInAuthState()) return 'missing_auth';
 
     return this.withPage(
       url,
       async (page) => {
         await page.waitForTimeout(1_000);
         const hasSignInForm =
-          (await page.locator('input[name="session_key"], input#username, input[name="session_password"]').count()) >
-          0;
-        return hasSignInForm ? "expired" : "ok";
+          (await page
+            .locator('input[name="session_key"], input#username, input[name="session_password"]')
+            .count()) > 0;
+        return hasSignInForm ? 'expired' : 'ok';
       },
-      { useLinkedInAuth: true }
+      { useLinkedInAuth: true },
     );
   }
 
   async detectGoogleAuthState(
     url: string,
-    authMode: "auto" | "google" | "linkedin" = "auto"
-  ): Promise<"ok" | "expired" | "missing_auth"> {
-    if (authMode === "linkedin") return "ok";
-    const shouldProbe = authMode === "google" || this.looksGoogleRelatedUrl(url);
-    if (!shouldProbe) return "ok";
-    if (!this.hasGoogleAuthState()) return "missing_auth";
+    authMode: 'auto' | 'google' | 'linkedin' = 'auto',
+  ): Promise<'ok' | 'expired' | 'missing_auth'> {
+    if (authMode === 'linkedin') return 'ok';
+    const shouldProbe = authMode === 'google' || this.looksGoogleRelatedUrl(url);
+    if (!shouldProbe) return 'ok';
+    if (!this.hasGoogleAuthState()) return 'missing_auth';
 
     return this.withPage(
       url,
       async (page) => {
         await page.waitForTimeout(1000);
         const needsGoogle = await this.isGoogleAuthContext(page);
-        if (!needsGoogle) return "ok";
+        if (!needsGoogle) return 'ok';
         const current = page.url().toLowerCase();
-        const onSignIn = current.includes("accounts.google.com");
-        return onSignIn ? "expired" : "ok";
+        const onSignIn = current.includes('accounts.google.com');
+        return onSignIn ? 'expired' : 'ok';
       },
-      { useGoogleAuth: true, authMode }
+      { useGoogleAuth: true, authMode },
     );
   }
 
   private async extractFieldsFromPage(page: Page): Promise<FormField[]> {
     const raw = await page.evaluate(() => {
-      const selectable = Array.from(document.querySelectorAll("input, textarea, select"));
+      const selectable = Array.from(document.querySelectorAll('input, textarea, select'));
       return selectable.map((el) => {
         const input = el as HTMLInputElement;
-        const ariaLabel = input.getAttribute("aria-label") || "";
-        const placeholder = input.placeholder || "";
-        const fallbackKey = ariaLabel || placeholder || "field";
+        const ariaLabel = input.getAttribute('aria-label') || '';
+        const placeholder = input.placeholder || '';
+        const fallbackKey = ariaLabel || placeholder || 'field';
         return {
           name: input.name || input.id || fallbackKey,
-          label: ariaLabel || input.getAttribute("name") || input.getAttribute("id") || fallbackKey,
+          label: ariaLabel || input.getAttribute('name') || input.getAttribute('id') || fallbackKey,
           type: (input.type || input.tagName.toLowerCase()).toLowerCase(),
           required: input.required,
-          placeholder: placeholder || undefined
+          placeholder: placeholder || undefined,
         };
       });
     });
@@ -586,18 +624,18 @@ export class BrowserTool {
 
   private async extractFieldsFromLocator(root: Locator): Promise<FormField[]> {
     if (!(await root.count())) return [];
-    const raw = await root.locator("input, textarea, select").evaluateAll((els) => {
+    const raw = await root.locator('input, textarea, select').evaluateAll((els) => {
       return els.map((el) => {
         const input = el as HTMLInputElement;
-        const ariaLabel = input.getAttribute("aria-label") || "";
-        const placeholder = input.placeholder || "";
-        const fallbackKey = ariaLabel || placeholder || "field";
+        const ariaLabel = input.getAttribute('aria-label') || '';
+        const placeholder = input.placeholder || '';
+        const fallbackKey = ariaLabel || placeholder || 'field';
         return {
           name: input.name || input.id || fallbackKey,
-          label: ariaLabel || input.getAttribute("name") || input.getAttribute("id") || fallbackKey,
+          label: ariaLabel || input.getAttribute('name') || input.getAttribute('id') || fallbackKey,
           type: (input.type || input.tagName.toLowerCase()).toLowerCase(),
           required: input.required,
-          placeholder: placeholder || undefined
+          placeholder: placeholder || undefined,
         };
       });
     });
@@ -605,21 +643,21 @@ export class BrowserTool {
   }
 
   private normalizeFields(raw: FormField[]): FormField[] {
-    const blockedInputTypes = new Set(["hidden", "submit", "button", "image", "reset"]);
+    const blockedInputTypes = new Set(['hidden', 'submit', 'button', 'image', 'reset']);
     const byName = new Map<string, FormField>();
 
     for (const field of raw) {
-      const normalizedType = (field.type || "").toLowerCase();
+      const normalizedType = (field.type || '').toLowerCase();
       if (blockedInputTypes.has(normalizedType)) continue;
 
-      const name = field.name || field.label || "field";
+      const name = field.name || field.label || 'field';
       const existing = byName.get(name);
       const next: FormField = {
         name,
         label: field.label || name,
-        type: normalizedType || "text",
+        type: normalizedType || 'text',
         required: Boolean(field.required),
-        placeholder: field.placeholder
+        placeholder: field.placeholder,
       };
 
       if (!existing) {
@@ -632,7 +670,7 @@ export class BrowserTool {
         label: existing.label || next.label,
         type: existing.type || next.type,
         required: existing.required || next.required,
-        placeholder: existing.placeholder || next.placeholder
+        placeholder: existing.placeholder || next.placeholder,
       });
     }
 
@@ -645,8 +683,8 @@ export class BrowserTool {
       return {
         filledCount: 0,
         missingSelectors: [],
-        blockerCode: "CAPTCHA_BLOCKED",
-        blockerReason: blocker.reason || "Human verification required"
+        blockerCode: 'CAPTCHA_BLOCKED',
+        blockerReason: blocker.reason || 'Human verification required',
       };
     }
 
@@ -666,8 +704,8 @@ export class BrowserTool {
 
       const tagName = await target.evaluate((el) => el.tagName.toLowerCase());
       const inputType = await target
-        .evaluate((el) => ((el as HTMLInputElement).type || "").toLowerCase())
-        .catch(() => "");
+        .evaluate((el) => ((el as HTMLInputElement).type || '').toLowerCase())
+        .catch(() => '');
       const fieldNameLower = answer.fieldName.toLowerCase();
       let value = answer.value;
       const fieldContextText = await this.extractFieldContextText(page, target);
@@ -676,37 +714,48 @@ export class BrowserTool {
 
       if (
         identity.useSecondary &&
-        (inputType === "email" ||
-          fieldNameLower.includes("email") ||
-          fieldNameLower.includes("mail") ||
-          fieldNameLower.includes("google"))
+        (inputType === 'email' ||
+          fieldNameLower.includes('email') ||
+          fieldNameLower.includes('mail') ||
+          fieldNameLower.includes('google'))
       ) {
         value = identity.email;
       }
-      if (identity.useSecondary && (fieldNameLower.includes("name") || labelText.includes("full_name"))) {
+      if (
+        identity.useSecondary &&
+        (fieldNameLower.includes('name') || labelText.includes('full_name'))
+      ) {
         value = identity.name || value;
       }
-      if (identity.useSecondary && fieldNameLower.includes("linkedin")) {
+      if (identity.useSecondary && fieldNameLower.includes('linkedin')) {
         value = identity.linkedin || value;
       }
-      if (identity.useSecondary && fieldNameLower.includes("github")) {
+      if (identity.useSecondary && fieldNameLower.includes('github')) {
         value = identity.github || value;
       }
       if (
         identity.useSecondary &&
-        (fieldNameLower.includes("phone") || fieldNameLower.includes("mobile") || inputType === "tel")
+        (fieldNameLower.includes('phone') ||
+          fieldNameLower.includes('mobile') ||
+          inputType === 'tel')
       ) {
         value = identity.phone || value;
       }
 
-      const isEmailField = inputType === "email" || fieldNameLower.includes("email") || fieldNameLower.includes("mail");
-      const isPhoneField = inputType === "tel" || fieldNameLower.includes("phone") || fieldNameLower.includes("mobile");
+      const isEmailField =
+        inputType === 'email' ||
+        fieldNameLower.includes('email') ||
+        fieldNameLower.includes('mail');
+      const isPhoneField =
+        inputType === 'tel' ||
+        fieldNameLower.includes('phone') ||
+        fieldNameLower.includes('mobile');
       if (isEmailField || isPhoneField) {
         const currentValue = await this.readInputValue(target);
         const primaryContact = this.loadPrimaryContactData();
 
         if (isEmailField) {
-          const preferredEmail = identity.email || primaryContact.email || "";
+          const preferredEmail = identity.email || primaryContact.email || '';
           if (this.looksValidEmail(currentValue)) {
             value = currentValue;
           } else if (this.looksValidEmail(preferredEmail)) {
@@ -715,7 +764,7 @@ export class BrowserTool {
         }
 
         if (isPhoneField) {
-          const preferredPhone = identity.phone || primaryContact.phone || "";
+          const preferredPhone = identity.phone || primaryContact.phone || '';
           if (this.looksValidPhone(currentValue) && !this.isSuspiciousPhone(currentValue)) {
             value = currentValue;
           } else if (this.looksValidPhone(preferredPhone)) {
@@ -724,7 +773,7 @@ export class BrowserTool {
         }
       }
 
-      if (inputType === "file") {
+      if (inputType === 'file') {
         const uploaded = await this.attachResumeToInput(target, identity.resumePath);
         if (!uploaded) {
           missingSelectors.push(answer.fieldName);
@@ -734,18 +783,23 @@ export class BrowserTool {
         continue;
       }
 
-      if (inputType === "checkbox") {
+      if (inputType === 'checkbox') {
         const contextualName = `${answer.fieldName} ${fieldContextText}`.toLowerCase();
 
         if (
-          contextualName.includes("non-compete") ||
-          contextualName.includes("non compete") ||
-          contextualName.includes("prevent you from working")
+          contextualName.includes('non-compete') ||
+          contextualName.includes('non compete') ||
+          contextualName.includes('prevent you from working')
         ) {
-          value = "No";
+          value = 'No';
         }
 
-        const binarySelected = await this.trySelectBinaryCheckboxOption(page, hasModal ? modal : null, target, value);
+        const binarySelected = await this.trySelectBinaryCheckboxOption(
+          page,
+          hasModal ? modal : null,
+          target,
+          value,
+        );
         if (binarySelected !== null) {
           if (binarySelected) {
             filledCount += 1;
@@ -766,7 +820,7 @@ export class BrowserTool {
         continue;
       }
 
-      if (inputType === "radio") {
+      if (inputType === 'radio') {
         const selected = await this.selectRadioOption(page, modal, target, answer.fieldName, value);
         if (selected) {
           filledCount += 1;
@@ -776,7 +830,7 @@ export class BrowserTool {
         continue;
       }
 
-      if (tagName === "select") {
+      if (tagName === 'select') {
         await target.selectOption({ label: value }).catch(async () => {
           await target.selectOption({ value }).catch(() => undefined);
         });
@@ -809,7 +863,7 @@ export class BrowserTool {
     const identity = this.loadPrimaryIdentityData();
     const skills = identity.skills || [];
     const skillYears = identity.skillYears || {};
-    const root = modal && (await modal.count().catch(() => 0)) > 0 ? modal : page.locator("body");
+    const root = modal && (await modal.count().catch(() => 0)) > 0 ? modal : page.locator('body');
     const rootHandle = await root.elementHandle();
     if (!rootHandle) return 0;
 
@@ -820,24 +874,24 @@ export class BrowserTool {
         const explicitYears = (data?.skillYears || {}) as Record<string, number>;
 
         const normalize = (v: string) =>
-          (v || "")
+          (v || '')
             .toLowerCase()
-            .replace(/[\(\)\[\],]/g, " ")
-            .replace(/\s+/g, " ")
+            .replace(/[\(\)\[\],]/g, ' ')
+            .replace(/\s+/g, ' ')
             .trim()
-            .replace("react js", "react")
-            .replace("react.js", "react")
-            .replace("vue js", "vue")
-            .replace("vue.js", "vue")
-            .replace("node js", "node.js")
-            .replace("nodejs", "node.js")
-            .replace("express js", "express.js")
-            .replace("next js", "next.js");
+            .replace('react js', 'react')
+            .replace('react.js', 'react')
+            .replace('vue js', 'vue')
+            .replace('vue.js', 'vue')
+            .replace('node js', 'node.js')
+            .replace('nodejs', 'node.js')
+            .replace('express js', 'express.js')
+            .replace('next js', 'next.js');
 
         const dispatch = (node: HTMLInputElement) => {
-          node.dispatchEvent(new Event("input", { bubbles: true }));
-          node.dispatchEvent(new Event("change", { bubbles: true }));
-          node.dispatchEvent(new Event("blur", { bubbles: true }));
+          node.dispatchEvent(new Event('input', { bubbles: true }));
+          node.dispatchEvent(new Event('change', { bubbles: true }));
+          node.dispatchEvent(new Event('blur', { bubbles: true }));
         };
 
         const inferYears = (skill: string): number => {
@@ -851,29 +905,36 @@ export class BrowserTool {
         };
 
         let changed = 0;
-        const textNodes = Array.from(rootEl.querySelectorAll("label, legend, p, span, div"));
+        const textNodes = Array.from(rootEl.querySelectorAll('label, legend, p, span, div'));
         for (const node of textNodes) {
-          const text = (node.textContent || "").trim();
+          const text = (node.textContent || '').trim();
           if (!text) continue;
           const lower = text.toLowerCase();
 
           if (
-            lower.includes("have you completed the following level of education") ||
+            lower.includes('have you completed the following level of education') ||
             lower.includes("bachelor's degree") ||
-            lower.includes("bachelors degree")
+            lower.includes('bachelors degree')
           ) {
-            const container = (node.closest("fieldset") || node.parentElement || rootEl) as HTMLElement;
-            const options = Array.from(container.querySelectorAll('input[type="radio"], input[type="checkbox"]')) as
-              | HTMLInputElement[];
+            const container = (node.closest('fieldset') ||
+              node.parentElement ||
+              rootEl) as HTMLElement;
+            const options = Array.from(
+              container.querySelectorAll('input[type="radio"], input[type="checkbox"]'),
+            ) as HTMLInputElement[];
             let picked = false;
             for (const input of options) {
-              const id = input.id || "";
+              const id = input.id || '';
               const forLabel = id ? container.querySelector(`label[for="${id}"]`) : null;
-              const parentLabel = input.closest("label");
-              const optionText = `${input.value || ""} ${input.getAttribute("aria-label") || ""} ${
-                (forLabel?.textContent || "") as string
-              } ${(parentLabel?.textContent || "") as string}`.toLowerCase();
-              if (optionText.includes("yes") || optionText.includes("true") || optionText.includes("1")) {
+              const parentLabel = input.closest('label');
+              const optionText = `${input.value || ''} ${input.getAttribute('aria-label') || ''} ${
+                (forLabel?.textContent || '') as string
+              } ${(parentLabel?.textContent || '') as string}`.toLowerCase();
+              if (
+                optionText.includes('yes') ||
+                optionText.includes('true') ||
+                optionText.includes('1')
+              ) {
                 input.checked = true;
                 dispatch(input);
                 changed += 1;
@@ -888,15 +949,19 @@ export class BrowserTool {
             }
           }
 
-          const yearsMatch = lower.match(/how many years of work experience do you have with\s+([a-z0-9.+#/\-\s]+)\??/i);
+          const yearsMatch = lower.match(
+            /how many years of work experience do you have with\s+([a-z0-9.+#/\-\s]+)\??/i,
+          );
           if (yearsMatch?.[1]) {
             const skill = yearsMatch[1];
             const years = inferYears(skill);
-            const container = (node.closest("fieldset") || node.parentElement || rootEl) as HTMLElement;
+            const container = (node.closest('fieldset') ||
+              node.parentElement ||
+              rootEl) as HTMLElement;
             const input =
               (container.querySelector('input[type="number"]') as HTMLInputElement | null) ||
               (container.querySelector('input[type="text"]') as HTMLInputElement | null) ||
-              (container.querySelector("input:not([type])") as HTMLInputElement | null);
+              (container.querySelector('input:not([type])') as HTMLInputElement | null);
             if (input) {
               input.value = String(years);
               dispatch(input);
@@ -906,7 +971,7 @@ export class BrowserTool {
         }
         return changed;
       },
-      { skills, skillYears }
+      { skills, skillYears },
     );
 
     return filled || 0;
@@ -915,7 +980,7 @@ export class BrowserTool {
   private async processLinkedInEasyApplyFlow(
     page: Page,
     answers: FieldAnswer[],
-    allowSubmit: boolean
+    allowSubmit: boolean,
   ): Promise<FillFormResult & SubmitResult> {
     const matched = new Set<string>();
     const clickedSteps: string[] = [];
@@ -931,65 +996,61 @@ export class BrowserTool {
 
       const modal = page.locator('[role="dialog"]').last();
       if ((await modal.count()) === 0) {
-        const body = (await page.textContent("body").catch(() => ""))?.toLowerCase() || "";
+        const body = (await page.textContent('body').catch(() => ''))?.toLowerCase() || '';
         const successSignal =
-          body.includes("application submitted") ||
-          body.includes("application sent") ||
-          body.includes("your application was sent") ||
-          body.includes("thank you");
+          body.includes('application submitted') ||
+          body.includes('application sent') ||
+          body.includes('your application was sent') ||
+          body.includes('thank you');
         return {
           filledCount: matched.size,
-          missingSelectors: answers
-            .map((a) => a.fieldName)
-            .filter((name) => !matched.has(name)),
+          missingSelectors: answers.map((a) => a.fieldName).filter((name) => !matched.has(name)),
           submitted: successSignal,
-          reason: successSignal ? "LinkedIn Easy Apply submitted" : "Easy Apply modal closed unexpectedly"
+          reason: successSignal
+            ? 'LinkedIn Easy Apply submitted'
+            : 'Easy Apply modal closed unexpectedly',
         };
       }
 
       const snapshotBefore = await this.getLinkedInModalSnapshot(modal);
       const submitBtn = await this.findFirstEnabledButton(modal, [
         'button:has-text("Submit application")',
-        'button:has-text("Submit")'
+        'button:has-text("Submit")',
       ]);
       if (submitBtn) {
         if (!allowSubmit) {
           return {
             filledCount: matched.size,
-            missingSelectors: answers
-              .map((a) => a.fieldName)
-              .filter((name) => !matched.has(name)),
+            missingSelectors: answers.map((a) => a.fieldName).filter((name) => !matched.has(name)),
             submitted: false,
-            reason: "Reached submit step in dry-run mode; submission skipped"
+            reason: 'Reached submit step in dry-run mode; submission skipped',
           };
         }
 
         try {
           await submitBtn.click({ timeout: 5_000 });
           await this.waitForLinkedInModalTransition(page, modal, snapshotBefore, 2500);
-          const body = (await page.textContent("body"))?.toLowerCase() || "";
+          const body = (await page.textContent('body'))?.toLowerCase() || '';
           const successSignal =
-            body.includes("application submitted") ||
-            body.includes("application sent") ||
-            body.includes("your application was sent") ||
-            body.includes("thank you") ||
+            body.includes('application submitted') ||
+            body.includes('application sent') ||
+            body.includes('your application was sent') ||
+            body.includes('thank you') ||
             (await modal.count()) === 0;
           return {
             filledCount: matched.size,
-            missingSelectors: answers
-              .map((a) => a.fieldName)
-              .filter((name) => !matched.has(name)),
+            missingSelectors: answers.map((a) => a.fieldName).filter((name) => !matched.has(name)),
             submitted: successSignal,
-            reason: successSignal ? "LinkedIn Easy Apply submitted" : "Submit clicked but no success signal detected"
+            reason: successSignal
+              ? 'LinkedIn Easy Apply submitted'
+              : 'Submit clicked but no success signal detected',
           };
         } catch {
           return {
             filledCount: matched.size,
-            missingSelectors: answers
-              .map((a) => a.fieldName)
-              .filter((name) => !matched.has(name)),
+            missingSelectors: answers.map((a) => a.fieldName).filter((name) => !matched.has(name)),
             submitted: false,
-            reason: "Failed to click LinkedIn submit button"
+            reason: 'Failed to click LinkedIn submit button',
           };
         }
       }
@@ -998,24 +1059,22 @@ export class BrowserTool {
         'button:has-text("Next")',
         'button:has-text("Review")',
         'button:has-text("Continue")',
-        'button:has-text("Continue to next step")'
+        'button:has-text("Continue to next step")',
       ]);
       if (!nextBtn) {
         return {
           filledCount: matched.size,
-          missingSelectors: answers
-            .map((a) => a.fieldName)
-            .filter((name) => !matched.has(name)),
+          missingSelectors: answers.map((a) => a.fieldName).filter((name) => !matched.has(name)),
           submitted: false,
           reason:
             clickedSteps.length > 0
-              ? "LinkedIn Easy Apply flow ended before submit step"
-              : "LinkedIn Easy Apply step controls not found"
+              ? 'LinkedIn Easy Apply flow ended before submit step'
+              : 'LinkedIn Easy Apply step controls not found',
         };
       }
 
-      const stepText = ((await nextBtn.innerText().catch(() => "")) || "").trim();
-      clickedSteps.push(stepText || "next");
+      const stepText = ((await nextBtn.innerText().catch(() => '')) || '').trim();
+      clickedSteps.push(stepText || 'next');
       try {
         await nextBtn.click({ timeout: 5_000 });
         const moved = await this.waitForLinkedInModalTransition(page, modal, snapshotBefore, 2200);
@@ -1028,11 +1087,9 @@ export class BrowserTool {
       } catch {
         return {
           filledCount: matched.size,
-          missingSelectors: answers
-            .map((a) => a.fieldName)
-            .filter((name) => !matched.has(name)),
+          missingSelectors: answers.map((a) => a.fieldName).filter((name) => !matched.has(name)),
           submitted: false,
-          reason: "Failed while navigating LinkedIn Easy Apply steps"
+          reason: 'Failed while navigating LinkedIn Easy Apply steps',
         };
       }
       await page.waitForTimeout(350);
@@ -1040,15 +1097,16 @@ export class BrowserTool {
 
     return {
       filledCount: matched.size,
-      missingSelectors: answers
-        .map((a) => a.fieldName)
-        .filter((name) => !matched.has(name)),
+      missingSelectors: answers.map((a) => a.fieldName).filter((name) => !matched.has(name)),
       submitted: false,
-      reason: "Reached max LinkedIn Easy Apply steps without submit"
+      reason: 'Reached max LinkedIn Easy Apply steps without submit',
     };
   }
 
-  private async findFirstEnabledButton(root: Locator, selectors: string[]): Promise<Locator | null> {
+  private async findFirstEnabledButton(
+    root: Locator,
+    selectors: string[],
+  ): Promise<Locator | null> {
     for (const selector of selectors) {
       const matches = root.locator(selector);
       const count = await matches.count().catch(() => 0);
@@ -1065,8 +1123,11 @@ export class BrowserTool {
   }
 
   private async getLinkedInModalSnapshot(modal: Locator): Promise<string> {
-    if (!(await modal.count().catch(() => 0))) return "";
-    const text = (await modal.innerText().catch(() => "")).replace(/\s+/g, " ").trim().slice(0, 600);
+    if (!(await modal.count().catch(() => 0))) return '';
+    const text = (await modal.innerText().catch(() => ''))
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 600);
     return text;
   }
 
@@ -1074,7 +1135,7 @@ export class BrowserTool {
     page: Page,
     modal: Locator,
     before: string,
-    timeoutMs: number
+    timeoutMs: number,
   ): Promise<boolean> {
     const started = Date.now();
     while (Date.now() - started < timeoutMs) {
@@ -1090,8 +1151,8 @@ export class BrowserTool {
   private async openLinkedInEasyApplyModal(page: Page): Promise<boolean> {
     const buttons = [
       'button:has-text("Easy Apply")',
-      "button.jobs-apply-button",
-      '[aria-label*="Easy Apply"]'
+      'button.jobs-apply-button',
+      '[aria-label*="Easy Apply"]',
     ];
 
     for (const selector of buttons) {
@@ -1118,7 +1179,7 @@ export class BrowserTool {
       'a:has-text("Apply")',
       'button:has-text("Apply")',
       'a[aria-label*="Apply"]',
-      'button[aria-label*="Apply"]'
+      'button[aria-label*="Apply"]',
     ];
 
     for (const selector of buttons) {
@@ -1126,19 +1187,19 @@ export class BrowserTool {
       if (!(await control.count())) continue;
 
       try {
-        const popupPromise = context.waitForEvent("page", { timeout: 4_000 }).catch(() => null);
+        const popupPromise = context.waitForEvent('page', { timeout: 4_000 }).catch(() => null);
         await control.click({ timeout: 5_000 });
         const popup = await popupPromise;
         if (popup) {
-          await popup.waitForLoadState("domcontentloaded");
+          await popup.waitForLoadState('domcontentloaded');
           const popupUrl = popup.url().toLowerCase();
-          if (!popupUrl.includes("linkedin.com")) return popup;
+          if (!popupUrl.includes('linkedin.com')) return popup;
           await popup.close().catch(() => undefined);
         }
 
         await page.waitForTimeout(1_500);
         const current = page.url().toLowerCase();
-        if (!current.includes("linkedin.com") && current !== original.toLowerCase()) {
+        if (!current.includes('linkedin.com') && current !== original.toLowerCase()) {
           return page;
         }
       } catch {
@@ -1158,7 +1219,11 @@ export class BrowserTool {
       const intent = await this.detectPageIntent(activePage);
       this.log(`external intent=${intent} url=${activePage.url()}`);
 
-      if (intent === "application_form" || intent === "upload_resume_step" || intent === "review_submit_step") {
+      if (
+        intent === 'application_form' ||
+        intent === 'upload_resume_step' ||
+        intent === 'review_submit_step'
+      ) {
         return activePage;
       }
 
@@ -1179,7 +1244,7 @@ export class BrowserTool {
       'button:has-text("Accept")',
       'button:has-text("I Agree")',
       'button:has-text("Got it")',
-      'button:has-text("Allow all")'
+      'button:has-text("Allow all")',
     ];
 
     for (const selector of selectors) {
@@ -1208,18 +1273,21 @@ export class BrowserTool {
       'button:has-text("Start Application")',
       'a:has-text("Start Application")',
       'button:has-text("Apply")',
-      'a:has-text("Apply")'
+      'a:has-text("Apply")',
     ];
 
     for (const selector of ctas) {
       const cta = page.locator(selector).first();
       if (!(await cta.count())) continue;
       try {
-        const popupPromise = page.context().waitForEvent("page", { timeout: 3000 }).catch(() => null);
+        const popupPromise = page
+          .context()
+          .waitForEvent('page', { timeout: 3000 })
+          .catch(() => null);
         await cta.click({ timeout: 3000 });
         const popup = await popupPromise;
         if (popup) {
-          await popup.waitForLoadState("domcontentloaded");
+          await popup.waitForLoadState('domcontentloaded');
           return { clicked: true, page: popup };
         }
         return { clicked: true, page };
@@ -1232,7 +1300,11 @@ export class BrowserTool {
 
   private async trySubmit(
     page: Page,
-    options: { captchaHandoff?: boolean; captchaHandoffTimeoutMs?: number; resumePath?: string } = {}
+    options: {
+      captchaHandoff?: boolean;
+      captchaHandoffTimeoutMs?: number;
+      resumePath?: string;
+    } = {},
   ): Promise<SubmitResult> {
     if (options.resumePath) {
       await this.ensureResumeAttachedBeforeSubmit(page, options.resumePath);
@@ -1240,7 +1312,7 @@ export class BrowserTool {
       if (missing.length > 0) {
         return {
           submitted: false,
-          reason: `Required resume/file input is empty before submit: ${missing.join(", ")}`
+          reason: `Required resume/file input is empty before submit: ${missing.join(', ')}`,
         };
       }
     }
@@ -1251,7 +1323,10 @@ export class BrowserTool {
       if (!resumed.resolved) {
         return {
           submitted: false,
-          reason: resumed.reason || blocker.reason || "CAPTCHA or human verification required before submission"
+          reason:
+            resumed.reason ||
+            blocker.reason ||
+            'CAPTCHA or human verification required before submission',
         };
       }
       if (options.resumePath) {
@@ -1260,7 +1335,7 @@ export class BrowserTool {
         if (missing.length > 0) {
           return {
             submitted: false,
-            reason: `Required resume/file input is empty after CAPTCHA verification: ${missing.join(", ")}`
+            reason: `Required resume/file input is empty after CAPTCHA verification: ${missing.join(', ')}`,
           };
         }
       }
@@ -1273,14 +1348,14 @@ export class BrowserTool {
       'button:has-text("Submit")',
       'button[id*="submit"]',
       'button[data-qa*="submit"]',
-      "#btn-submit",
-      ".postings-btn.template-btn-submit",
+      '#btn-submit',
+      '.postings-btn.template-btn-submit',
       'button[type="submit"]',
       'input[type="submit"]',
       'button:has-text("Review")',
       'button:has-text("Next")',
       'button:has-text("Continue")',
-      'button:has-text("Apply")'
+      'button:has-text("Apply")',
     ];
     let submitControlFound = false;
     let clickFailures = 0;
@@ -1309,22 +1384,22 @@ export class BrowserTool {
 
         await page.waitForTimeout(2_000);
         const afterUrl = page.url();
-        const body = (await page.textContent("body"))?.toLowerCase() || "";
+        const body = (await page.textContent('body'))?.toLowerCase() || '';
         const successSignal =
           afterUrl !== beforeUrl ||
-          body.includes("thank you") ||
-          body.includes("application submitted") ||
-          body.includes("we have received") ||
-          body.includes("application sent");
+          body.includes('thank you') ||
+          body.includes('application submitted') ||
+          body.includes('we have received') ||
+          body.includes('application sent');
 
         if (successSignal) {
-          return { submitted: true, reason: "Submission signal detected" };
+          return { submitted: true, reason: 'Submission signal detected' };
         }
 
         const verificationError =
-          body.includes("error verifying your application") ||
-          body.includes("unable to verify your application") ||
-          body.includes("verification failed");
+          body.includes('error verifying your application') ||
+          body.includes('unable to verify your application') ||
+          body.includes('verification failed');
         if (verificationError) {
           const resumed = await this.waitForCaptchaHandoff(page, options);
           if (resumed.resolved) {
@@ -1334,7 +1409,7 @@ export class BrowserTool {
               if (missing.length > 0) {
                 return {
                   submitted: false,
-                  reason: `Required resume/file input is empty after verification retry: ${missing.join(", ")}`
+                  reason: `Required resume/file input is empty after verification retry: ${missing.join(', ')}`,
                 };
               }
             }
@@ -1344,16 +1419,20 @@ export class BrowserTool {
             submitted: false,
             reason:
               resumed.reason ||
-              "Application verification failed. Complete CAPTCHA/hCaptcha challenge and retry submit."
+              'Application verification failed. Complete CAPTCHA/hCaptcha challenge and retry submit.',
           };
         }
 
-        const hasHCaptcha = (await page.locator("#h-captcha, .h-captcha, [data-sitekey]").count().catch(() => 0)) > 0;
+        const hasHCaptcha =
+          (await page
+            .locator('#h-captcha, .h-captcha, [data-sitekey]')
+            .count()
+            .catch(() => 0)) > 0;
         const hasValidation =
-          body.includes("required") ||
-          body.includes("this field is required") ||
-          body.includes("please fill out") ||
-          body.includes("invalid");
+          body.includes('required') ||
+          body.includes('this field is required') ||
+          body.includes('please fill out') ||
+          body.includes('invalid');
         if (hasHCaptcha) {
           const resumed = await this.waitForCaptchaHandoff(page, options);
           if (resumed.resolved) {
@@ -1363,7 +1442,7 @@ export class BrowserTool {
               if (missing.length > 0) {
                 return {
                   submitted: false,
-                  reason: `Required resume/file input is empty after CAPTCHA challenge: ${missing.join(", ")}`
+                  reason: `Required resume/file input is empty after CAPTCHA challenge: ${missing.join(', ')}`,
                 };
               }
             }
@@ -1372,13 +1451,14 @@ export class BrowserTool {
           return {
             submitted: false,
             reason:
-              resumed.reason || "Submit clicked but hCaptcha/manual verification is blocking completion"
+              resumed.reason ||
+              'Submit clicked but hCaptcha/manual verification is blocking completion',
           };
         }
         if (hasValidation) {
           return {
             submitted: false,
-            reason: "Submit clicked but form validation errors are still present"
+            reason: 'Submit clicked but form validation errors are still present',
           };
         }
       }
@@ -1389,17 +1469,21 @@ export class BrowserTool {
         submitted: false,
         reason:
           clickFailures > 0
-            ? "Submit control detected but click failed or was blocked by page state"
-            : "Submit control detected but submission not confirmed"
+            ? 'Submit control detected but click failed or was blocked by page state'
+            : 'Submit control detected but submission not confirmed',
       };
     }
 
-    return { submitted: false, reason: "No submit control detected on page" };
+    return { submitted: false, reason: 'No submit control detected on page' };
   }
 
   private async tryExternalSubmit(
     page: Page,
-    options: { captchaHandoff?: boolean; captchaHandoffTimeoutMs?: number; resumePath?: string } = {}
+    options: {
+      captchaHandoff?: boolean;
+      captchaHandoffTimeoutMs?: number;
+      resumePath?: string;
+    } = {},
   ): Promise<SubmitResult> {
     await this.waitForResumeProcessing(page);
     if (options.resumePath) {
@@ -1411,13 +1495,16 @@ export class BrowserTool {
 
     const direct = await this.trySubmit(page, options);
     if (direct.submitted) return direct;
-    if (direct.reason && direct.reason !== "No submit control detected on page") {
+    if (direct.reason && direct.reason !== 'No submit control detected on page') {
       return { submitted: false, reason: direct.reason };
     }
-    if (modalResult.reason && modalResult.reason !== "No modal submit controls detected") {
+    if (modalResult.reason && modalResult.reason !== 'No modal submit controls detected') {
       return { submitted: false, reason: modalResult.reason };
     }
-    return { submitted: false, reason: direct.reason || modalResult.reason || "No submit control detected on page" };
+    return {
+      submitted: false,
+      reason: direct.reason || modalResult.reason || 'No submit control detected on page',
+    };
   }
 
   private async waitForResumeProcessing(page: Page): Promise<void> {
@@ -1425,11 +1512,11 @@ export class BrowserTool {
     const started = Date.now();
 
     while (Date.now() - started < maxWaitMs) {
-      const body = ((await page.textContent("body").catch(() => "")) || "").toLowerCase();
+      const body = ((await page.textContent('body').catch(() => '')) || '').toLowerCase();
       const stillProcessing =
-        body.includes("reading your resume") ||
-        body.includes("upload your resume to apply") ||
-        body.includes("processing");
+        body.includes('reading your resume') ||
+        body.includes('upload your resume to apply') ||
+        body.includes('processing');
       if (!stillProcessing) return;
       await page.waitForTimeout(900);
     }
@@ -1439,36 +1526,39 @@ export class BrowserTool {
     const maxSteps = 8;
     const modal = page.locator('[role="dialog"]').last();
     if (!(await modal.count())) {
-      return { submitted: false, reason: "No modal submit controls detected" };
+      return { submitted: false, reason: 'No modal submit controls detected' };
     }
 
     for (let i = 0; i < maxSteps; i += 1) {
       const submitBtn = modal
         .locator(
-          'button:has-text("Submit"), button:has-text("Apply"), button:has-text("Apply Now"), button:has-text("Finish")'
+          'button:has-text("Submit"), button:has-text("Apply"), button:has-text("Apply Now"), button:has-text("Finish")',
         )
         .first();
       if ((await submitBtn.count()) > 0) {
         try {
           await submitBtn.click({ timeout: 4_000 });
         } catch {
-          return { submitted: false, reason: "Failed clicking modal submit/apply button" };
+          return {
+            submitted: false,
+            reason: 'Failed clicking modal submit/apply button',
+          };
         }
         await page.waitForTimeout(2_000);
-        const body = ((await page.textContent("body").catch(() => "")) || "").toLowerCase();
+        const body = ((await page.textContent('body').catch(() => '')) || '').toLowerCase();
         if (
-          body.includes("application submitted") ||
-          body.includes("applied successfully") ||
-          body.includes("thank you") ||
-          body.includes("application sent")
+          body.includes('application submitted') ||
+          body.includes('applied successfully') ||
+          body.includes('thank you') ||
+          body.includes('application sent')
         ) {
-          return { submitted: true, reason: "External modal submit confirmed" };
+          return { submitted: true, reason: 'External modal submit confirmed' };
         }
       }
 
       const nextBtn = modal
         .locator(
-          'button:has-text("Continue"), button:has-text("Next"), button:has-text("Review"), button:has-text("Proceed")'
+          'button:has-text("Continue"), button:has-text("Next"), button:has-text("Review"), button:has-text("Proceed")',
         )
         .first();
       if ((await nextBtn.count()) === 0) {
@@ -1478,18 +1568,21 @@ export class BrowserTool {
       try {
         await nextBtn.click({ timeout: 4_000 });
       } catch {
-        return { submitted: false, reason: "Failed navigating external modal steps" };
+        return {
+          submitted: false,
+          reason: 'Failed navigating external modal steps',
+        };
       }
       await page.waitForTimeout(1_200);
       await this.waitForResumeProcessing(page);
     }
 
-    return { submitted: false, reason: "No modal submit controls detected" };
+    return { submitted: false, reason: 'No modal submit controls detected' };
   }
 
   private async capturePreview(page: Page, label: string): Promise<string> {
-    const ts = new Date().toISOString().replace(/[:.]/g, "-");
-    const dir = path.resolve(process.cwd(), ".preview");
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    const dir = path.resolve(process.cwd(), '.preview');
     fs.mkdirSync(dir, { recursive: true });
     const file = path.join(dir, `${label}-${ts}.png`);
     await page.screenshot({ path: file, fullPage: true });
@@ -1509,7 +1602,9 @@ export class BrowserTool {
     }
 
     for (const candidate of candidates) {
-      const resolved = path.isAbsolute(candidate) ? candidate : path.resolve(process.cwd(), candidate);
+      const resolved = path.isAbsolute(candidate)
+        ? candidate
+        : path.resolve(process.cwd(), candidate);
       if (fs.existsSync(resolved)) return resolved;
     }
 
@@ -1542,7 +1637,7 @@ export class BrowserTool {
     const fileInputs = page.locator('input[type="file"]');
     const count = await fileInputs.count();
     if (!count) {
-      this.log("resume attach skipped; no file inputs found");
+      this.log('resume attach skipped; no file inputs found');
       return 0;
     }
 
@@ -1552,17 +1647,18 @@ export class BrowserTool {
       const meta = await input
         .evaluate((el) => {
           const node = el as HTMLInputElement;
-          const key = `${node.name || ""} ${node.id || ""} ${node.getAttribute("aria-label") || ""}`.toLowerCase();
+          const key =
+            `${node.name || ''} ${node.id || ''} ${node.getAttribute('aria-label') || ''}`.toLowerCase();
           return {
             required: Boolean(node.required),
-            key
+            key,
           };
         })
-        .catch(() => ({ required: false, key: "" }));
+        .catch(() => ({ required: false, key: '' }));
       let score = 0;
       if (meta.required) score += 50;
-      if (meta.key.includes("resume") || meta.key.includes("cv")) score += 40;
-      if (meta.key.includes("attach") || meta.key.includes("upload")) score += 20;
+      if (meta.key.includes('resume') || meta.key.includes('cv')) score += 40;
+      if (meta.key.includes('attach') || meta.key.includes('upload')) score += 20;
       scored.push({ index: i, score });
     }
 
@@ -1603,8 +1699,8 @@ export class BrowserTool {
           const node = el as HTMLInputElement;
           return {
             required: Boolean(node.required),
-            name: node.name || node.id || "file",
-            hasFile: Boolean(node.files && node.files.length > 0)
+            name: node.name || node.id || 'file',
+            hasFile: Boolean(node.files && node.files.length > 0),
           };
         })
         .catch(() => null);
@@ -1627,15 +1723,15 @@ export class BrowserTool {
         name: secondary.name,
         linkedin: secondary.linkedin,
         github: secondary.github,
-        phone: secondary.phone
+        phone: secondary.phone,
       };
     }
 
     return {
       useSecondary: false,
-      email: this.loadPrimaryContactData().email || "",
+      email: this.loadPrimaryContactData().email || '',
       resumePath: this.resolveResumeFilePath(false),
-      phone: this.loadPrimaryContactData().phone || ""
+      phone: this.loadPrimaryContactData().phone || '',
     };
   }
 
@@ -1648,11 +1744,13 @@ export class BrowserTool {
     resumeFilePath?: string;
   } {
     const configured = env.SECONDARY_CANDIDATE_PROFILE_PATH;
-    const filePath = path.isAbsolute(configured) ? configured : path.resolve(process.cwd(), configured);
+    const filePath = path.isAbsolute(configured)
+      ? configured
+      : path.resolve(process.cwd(), configured);
     if (!fs.existsSync(filePath)) return {};
 
     try {
-      const raw = fs.readFileSync(filePath, "utf8");
+      const raw = fs.readFileSync(filePath, 'utf8');
       const parsed = JSON.parse(raw) as {
         name?: string;
         email?: string;
@@ -1673,14 +1771,26 @@ export class BrowserTool {
     skillYears?: Record<string, number>;
   } {
     const configured = env.CANDIDATE_PROFILE_PATH;
-    const filePath = path.isAbsolute(configured) ? configured : path.resolve(process.cwd(), configured);
-    const fromCandidate: { resumeFilePath?: string; skills?: string[]; skillYears?: Record<string, number> } = {};
-    const fromManual: { skills?: string[]; skillYears?: Record<string, number> } = {};
+    const filePath = path.isAbsolute(configured)
+      ? configured
+      : path.resolve(process.cwd(), configured);
+    const fromCandidate: {
+      resumeFilePath?: string;
+      skills?: string[];
+      skillYears?: Record<string, number>;
+    } = {};
+    const fromManual: {
+      skills?: string[];
+      skillYears?: Record<string, number>;
+    } = {};
 
     if (fs.existsSync(filePath)) {
       try {
-        const raw = fs.readFileSync(filePath, "utf8");
-        const parsed = JSON.parse(raw) as { resumeFilePath?: string; skills?: string[] };
+        const raw = fs.readFileSync(filePath, 'utf8');
+        const parsed = JSON.parse(raw) as {
+          resumeFilePath?: string;
+          skills?: string[];
+        };
         fromCandidate.resumeFilePath = parsed.resumeFilePath;
         fromCandidate.skills = parsed.skills || [];
       } catch {
@@ -1693,7 +1803,7 @@ export class BrowserTool {
       : path.resolve(process.cwd(), env.MANUAL_PROFILE_PATH);
     if (fs.existsSync(manualPath)) {
       try {
-        const raw = fs.readFileSync(manualPath, "utf8");
+        const raw = fs.readFileSync(manualPath, 'utf8');
         const parsed = JSON.parse(raw) as {
           preferences?: { skillYears?: Record<string, number> };
         };
@@ -1706,7 +1816,7 @@ export class BrowserTool {
     return {
       resumeFilePath: fromCandidate.resumeFilePath,
       skills: fromCandidate.skills || [],
-      skillYears: fromManual.skillYears || {}
+      skillYears: fromManual.skillYears || {},
     };
   }
 
@@ -1721,7 +1831,7 @@ export class BrowserTool {
       : path.resolve(process.cwd(), env.CANDIDATE_PROFILE_PATH);
     if (fs.existsSync(candidatePath)) {
       try {
-        const raw = fs.readFileSync(candidatePath, "utf8");
+        const raw = fs.readFileSync(candidatePath, 'utf8');
         const parsed = JSON.parse(raw) as { email?: string; phone?: string };
         output.email = parsed.email || output.email;
         output.phone = parsed.phone || output.phone;
@@ -1735,8 +1845,11 @@ export class BrowserTool {
       : path.resolve(process.cwd(), env.MANUAL_PROFILE_PATH);
     if (fs.existsSync(manualPath)) {
       try {
-        const raw = fs.readFileSync(manualPath, "utf8");
-        const parsed = JSON.parse(raw) as { emails?: string[]; phones?: string[] };
+        const raw = fs.readFileSync(manualPath, 'utf8');
+        const parsed = JSON.parse(raw) as {
+          emails?: string[];
+          phones?: string[];
+        };
         output.email = parsed.emails?.[0] || output.email;
         output.phone = parsed.phones?.[0] || output.phone;
       } catch {
@@ -1757,92 +1870,109 @@ export class BrowserTool {
       if (this.normalizeSkillKey(k) === skill) return Math.max(0, Math.floor(v));
     }
 
-    const knownSkills = new Set<string>((primary.skills || []).map((s) => this.normalizeSkillKey(s)));
+    const knownSkills = new Set<string>(
+      (primary.skills || []).map((s) => this.normalizeSkillKey(s)),
+    );
     return knownSkills.has(skill) ? 1 : 0;
   }
 
   private normalizeSkillKey(input: string): string {
-    return (input || "")
+    return (input || '')
       .toLowerCase()
-      .replace(/[\(\)\[\],]/g, " ")
-      .replace(/\s+/g, " ")
+      .replace(/[\(\)\[\],]/g, ' ')
+      .replace(/\s+/g, ' ')
       .trim()
-      .replace("react js", "react")
-      .replace("react.js", "react")
-      .replace("vue js", "vue")
-      .replace("vue.js", "vue")
-      .replace("node js", "node.js")
-      .replace("nodejs", "node.js")
-      .replace("express js", "express.js")
-      .replace("next js", "next.js");
+      .replace('react js', 'react')
+      .replace('react.js', 'react')
+      .replace('vue js', 'vue')
+      .replace('vue.js', 'vue')
+      .replace('node js', 'node.js')
+      .replace('nodejs', 'node.js')
+      .replace('express js', 'express.js')
+      .replace('next js', 'next.js');
   }
 
   private extractSkillFromYearsQuestion(context: string): string {
     const m = context.match(/with\s+([a-z0-9.+#/\-\s]+)\??/i);
-    return m?.[1]?.trim() || "";
+    return m?.[1]?.trim() || '';
   }
 
   private async isGoogleAuthContext(page: Page): Promise<boolean> {
     const url = page.url().toLowerCase();
-    if (url.includes("accounts.google.com")) return true;
+    if (url.includes('accounts.google.com')) return true;
 
     const googleControls = [
       'button:has-text("Continue with Google")',
       'a:has-text("Continue with Google")',
       'button:has-text("Sign in with Google")',
       'a:has-text("Sign in with Google")',
-      '[href*="accounts.google.com"]'
+      '[href*="accounts.google.com"]',
     ];
     for (const selector of googleControls) {
       if ((await page.locator(selector).count()) > 0) return true;
     }
 
-    const body = ((await page.textContent("body").catch(() => "")) || "").toLowerCase();
-    return body.includes("continue with google") || body.includes("sign in with google");
+    const body = ((await page.textContent('body').catch(() => '')) || '').toLowerCase();
+    return body.includes('continue with google') || body.includes('sign in with google');
   }
 
   private async hasApplicationSurface(page: Page): Promise<boolean> {
-    const formFields = await page.locator("input, textarea, select").count();
+    const formFields = await page.locator('input, textarea, select').count();
     if (formFields > 0) return true;
 
     if (await this.isGoogleAuthContext(page)) return true;
 
-    const body = ((await page.textContent("body").catch(() => "")) || "").toLowerCase();
-    return body.includes("upload your resume") || body.includes("apply now") || body.includes("application form");
+    const body = ((await page.textContent('body').catch(() => '')) || '').toLowerCase();
+    return (
+      body.includes('upload your resume') ||
+      body.includes('apply now') ||
+      body.includes('application form')
+    );
   }
 
   private async detectPageIntent(
-    page: Page
-  ): Promise<"landing" | "auth" | "application_form" | "upload_resume_step" | "review_submit_step"> {
-    const body = ((await page.textContent("body").catch(() => "")) || "").toLowerCase();
-    const controls = (await page.locator("button, a, input[type='submit']").allInnerTexts().catch(() => []))
-      .join(" ")
+    page: Page,
+  ): Promise<
+    'landing' | 'auth' | 'application_form' | 'upload_resume_step' | 'review_submit_step'
+  > {
+    const body = ((await page.textContent('body').catch(() => '')) || '').toLowerCase();
+    const controls = (
+      await page
+        .locator("button, a, input[type='submit']")
+        .allInnerTexts()
+        .catch(() => [])
+    )
+      .join(' ')
       .toLowerCase();
-    const hasFormFields = (await page.locator("input, textarea, select").count()) > 0;
+    const hasFormFields = (await page.locator('input, textarea, select').count()) > 0;
 
-    if (await this.isGoogleAuthContext(page)) return "auth";
-    if (body.includes("upload your resume") || body.includes("reading your resume")) return "upload_resume_step";
+    if (await this.isGoogleAuthContext(page)) return 'auth';
+    if (body.includes('upload your resume') || body.includes('reading your resume'))
+      return 'upload_resume_step';
     if (
-      controls.includes("review") ||
-      controls.includes("submit") ||
-      controls.includes("finish") ||
-      controls.includes("complete application")
+      controls.includes('review') ||
+      controls.includes('submit') ||
+      controls.includes('finish') ||
+      controls.includes('complete application')
     ) {
-      return "review_submit_step";
+      return 'review_submit_step';
     }
-    if (hasFormFields) return "application_form";
-    return "landing";
+    if (hasFormFields) return 'application_form';
+    return 'landing';
   }
 
   private resolveContextOptions(url: string, options: PageRunOptions): BrowserContextOptions {
-    const mode = options.authMode ?? "auto";
-    const includeLinkedIn = options.useLinkedInAuth && this.isLinkedIn(url) && mode !== "google";
+    const mode = options.authMode ?? 'auto';
+    const includeLinkedIn = options.useLinkedInAuth && this.isLinkedIn(url) && mode !== 'google';
     const includeGoogle =
       options.useGoogleAuth &&
-      mode !== "linkedin" &&
-      (mode === "google" || this.shouldUseGoogleAuthForUrl(url));
+      mode !== 'linkedin' &&
+      (mode === 'google' || this.shouldUseGoogleAuthForUrl(url));
 
-    const states: Array<{ cookies: unknown[]; origins: Array<{ origin: string; localStorage: unknown[] }> }> = [];
+    const states: Array<{
+      cookies: unknown[];
+      origins: Array<{ origin: string; localStorage: unknown[] }>;
+    }> = [];
 
     if (includeLinkedIn && this.shouldUseLinkedInAuth()) {
       const linkedInState = this.readStorageStateFile(this.linkedinStorageStatePath());
@@ -1855,8 +1985,13 @@ export class BrowserTool {
     }
 
     if (states.length === 0) return {};
-    if (states.length === 1) return { storageState: states[0] as BrowserContextOptions["storageState"] };
-    return { storageState: this.mergeStorageStates(states) as BrowserContextOptions["storageState"] };
+    if (states.length === 1)
+      return {
+        storageState: states[0] as BrowserContextOptions['storageState'],
+      };
+    return {
+      storageState: this.mergeStorageStates(states) as BrowserContextOptions['storageState'],
+    };
   }
 
   private shouldUseLinkedInAuth(): boolean {
@@ -1865,8 +2000,8 @@ export class BrowserTool {
 
   private shouldUseGoogleAuthForUrl(url: string): boolean {
     if (!env.GOOGLE_AUTH_ENABLED) return false;
-    const allowlist = (env.GOOGLE_AUTH_DOMAIN_ALLOWLIST || "")
-      .split(",")
+    const allowlist = (env.GOOGLE_AUTH_DOMAIN_ALLOWLIST || '')
+      .split(',')
       .map((d) => d.trim().toLowerCase())
       .filter(Boolean);
     if (allowlist.length === 0) return true;
@@ -1885,21 +2020,31 @@ export class BrowserTool {
     return path.isAbsolute(configured) ? configured : path.resolve(process.cwd(), configured);
   }
 
-  private readStorageStateFile(
-    filePath: string
-  ): { cookies: unknown[]; origins: Array<{ origin: string; localStorage: unknown[] }> } | null {
+  private readStorageStateFile(filePath: string): {
+    cookies: unknown[];
+    origins: Array<{ origin: string; localStorage: unknown[] }>;
+  } | null {
     if (!fs.existsSync(filePath)) return null;
     try {
-      const raw = fs.readFileSync(filePath, "utf8");
-      return JSON.parse(raw) as { cookies: unknown[]; origins: Array<{ origin: string; localStorage: unknown[] }> };
+      const raw = fs.readFileSync(filePath, 'utf8');
+      return JSON.parse(raw) as {
+        cookies: unknown[];
+        origins: Array<{ origin: string; localStorage: unknown[] }>;
+      };
     } catch {
       return null;
     }
   }
 
   private mergeStorageStates(
-    states: Array<{ cookies: unknown[]; origins: Array<{ origin: string; localStorage: unknown[] }> }>
-  ): { cookies: unknown[]; origins: Array<{ origin: string; localStorage: unknown[] }> } {
+    states: Array<{
+      cookies: unknown[];
+      origins: Array<{ origin: string; localStorage: unknown[] }>;
+    }>,
+  ): {
+    cookies: unknown[];
+    origins: Array<{ origin: string; localStorage: unknown[] }>;
+  } {
     const cookies: unknown[] = [];
     const cookieKeys = new Set<string>();
     const origins = new Map<string, { origin: string; localStorage: unknown[] }>();
@@ -1907,7 +2052,7 @@ export class BrowserTool {
     for (const state of states) {
       for (const c of state.cookies || []) {
         const cookie = c as { name?: string; domain?: string; path?: string };
-        const key = `${cookie.name || ""}|${cookie.domain || ""}|${cookie.path || ""}`;
+        const key = `${cookie.name || ''}|${cookie.domain || ''}|${cookie.path || ''}`;
         if (cookieKeys.has(key)) continue;
         cookieKeys.add(key);
         cookies.push(c);
@@ -1923,31 +2068,35 @@ export class BrowserTool {
   }
 
   private isLinkedIn(url: string): boolean {
-    return url.toLowerCase().includes("linkedin.com");
+    return url.toLowerCase().includes('linkedin.com');
   }
 
   private looksGoogleRelatedUrl(url: string): boolean {
     const lower = url.toLowerCase();
-    return lower.includes("google") || lower.includes("accounts.");
+    return lower.includes('google') || lower.includes('accounts.');
   }
 
   private escapeForAttributeSelector(value: string): string {
-    return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   }
 
   private toBooleanAnswer(value: string, defaultValue: boolean): boolean {
-    const normalized = (value || "").trim().toLowerCase();
+    const normalized = (value || '').trim().toLowerCase();
     if (!normalized) return defaultValue;
-    if (["true", "yes", "y", "1", "on", "agree"].includes(normalized)) return true;
-    if (["false", "no", "n", "0", "off", "disagree"].includes(normalized)) return false;
+    if (['true', 'yes', 'y', '1', 'on', 'agree'].includes(normalized)) return true;
+    if (['false', 'no', 'n', '0', 'off', 'disagree'].includes(normalized)) return false;
     return defaultValue;
   }
 
   private escapeForTextSelector(value: string): string {
-    return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   }
 
-  private async findTargetInput(page: Page, modal: Locator | null, fieldName: string): Promise<Locator | null> {
+  private async findTargetInput(
+    page: Page,
+    modal: Locator | null,
+    fieldName: string,
+  ): Promise<Locator | null> {
     const escaped = this.escapeForAttributeSelector(fieldName);
     const escapedText = this.escapeForTextSelector(fieldName);
     const selectorByIdentity = `[name="${escaped}"], [id="${escaped}"]`;
@@ -1956,8 +2105,8 @@ export class BrowserTool {
       `[placeholder="${escaped}"]`,
       `label:has-text("${escapedText}") + input`,
       `label:has-text("${escapedText}") + textarea`,
-      `label:has-text("${escapedText}") + select`
-    ].join(", ");
+      `label:has-text("${escapedText}") + select`,
+    ].join(', ');
 
     if (modal) {
       const fromModalIdentity = await this.findActionableField(modal.locator(selectorByIdentity));
@@ -1987,31 +2136,39 @@ export class BrowserTool {
           const input = el as HTMLInputElement;
           const computed = window.getComputedStyle(el);
           return {
-            type: (input.type || "").toLowerCase(),
+            type: (input.type || '').toLowerCase(),
             disabled: Boolean(input.disabled),
-            hiddenAttr: el.hasAttribute("hidden"),
-            ariaHidden: (el.getAttribute("aria-hidden") || "").toLowerCase() === "true",
+            hiddenAttr: el.hasAttribute('hidden'),
+            ariaHidden: (el.getAttribute('aria-hidden') || '').toLowerCase() === 'true',
             display: computed.display,
-            visibility: computed.visibility
+            visibility: computed.visibility,
           };
         })
         .catch(() => null);
 
       if (!meta) continue;
-      if (meta.type === "hidden") continue;
+      if (meta.type === 'hidden') continue;
       if (meta.disabled) continue;
 
       if (!firstNonHidden) firstNonHidden = candidate;
 
       const visible = await candidate.isVisible().catch(() => false);
-      const styledInvisible = meta.hiddenAttr || meta.ariaHidden || meta.display === "none" || meta.visibility === "hidden";
+      const styledInvisible =
+        meta.hiddenAttr ||
+        meta.ariaHidden ||
+        meta.display === 'none' ||
+        meta.visibility === 'hidden';
       if (visible && !styledInvisible) return candidate;
     }
 
     return firstNonHidden;
   }
 
-  private async toggleCheckboxWithFallback(page: Page, checkbox: Locator, shouldCheck: boolean): Promise<boolean> {
+  private async toggleCheckboxWithFallback(
+    page: Page,
+    checkbox: Locator,
+    shouldCheck: boolean,
+  ): Promise<boolean> {
     try {
       if (shouldCheck) {
         await checkbox.check();
@@ -2028,14 +2185,16 @@ export class BrowserTool {
       .evaluate((el) => {
         const input = el as HTMLInputElement;
         return {
-          id: input.id || "",
-          name: input.name || ""
+          id: input.id || '',
+          name: input.name || '',
         };
       })
-      .catch(() => ({ id: "", name: "" }));
+      .catch(() => ({ id: '', name: '' }));
 
     if (targetRef.id) {
-      const label = page.locator(`label[for="${this.escapeForAttributeSelector(targetRef.id)}"]`).first();
+      const label = page
+        .locator(`label[for="${this.escapeForAttributeSelector(targetRef.id)}"]`)
+        .first();
       if ((await label.count().catch(() => 0)) > 0) {
         try {
           await label.click({ timeout: 2_000 });
@@ -2064,52 +2223,53 @@ export class BrowserTool {
     const context = await target
       .evaluate((el) => {
         const node = el as HTMLInputElement;
-        const id = node.id || "";
+        const id = node.id || '';
         const associatedLabel = id ? document.querySelector(`label[for="${id}"]`) : null;
-        const parentLabel = node.closest("label");
+        const parentLabel = node.closest('label');
         const questionContainer =
-          node.closest("fieldset") ||
-          node.closest(".application-question") ||
-          node.closest(".application-field") ||
-          node.closest(".card-field") ||
+          node.closest('fieldset') ||
+          node.closest('.application-question') ||
+          node.closest('.application-field') ||
+          node.closest('.card-field') ||
           node.parentElement;
-        const questionText = (questionContainer?.textContent || "").slice(0, 300);
+        const questionText = (questionContainer?.textContent || '').slice(0, 300);
         return [
-          node.name || "",
-          node.id || "",
-          node.getAttribute("aria-label") || "",
-          node.placeholder || "",
-          associatedLabel?.textContent || "",
-          parentLabel?.textContent || "",
-          questionText
+          node.name || '',
+          node.id || '',
+          node.getAttribute('aria-label') || '',
+          node.placeholder || '',
+          associatedLabel?.textContent || '',
+          parentLabel?.textContent || '',
+          questionText,
         ]
-          .join(" ")
+          .join(' ')
           .toLowerCase();
       })
-      .catch(() => "");
-    return context || (await page.title().catch(() => ""));
+      .catch(() => '');
+    return context || (await page.title().catch(() => ''));
   }
 
   private async trySelectBinaryCheckboxOption(
     page: Page,
     modal: Locator | null,
     target: Locator,
-    desiredValue: string
+    desiredValue: string,
   ): Promise<boolean | null> {
-    const normalized = (desiredValue || "").trim().toLowerCase();
-    const wantsNo = normalized.includes("no") || ["false", "0", "n", "disagree"].includes(normalized);
-    const wantsYes = normalized.includes("yes") || ["true", "1", "y", "agree"].includes(normalized);
+    const normalized = (desiredValue || '').trim().toLowerCase();
+    const wantsNo =
+      normalized.includes('no') || ['false', '0', 'n', 'disagree'].includes(normalized);
+    const wantsYes = normalized.includes('yes') || ['true', '1', 'y', 'agree'].includes(normalized);
     if (!wantsNo && !wantsYes) return null;
 
     const targetMeta = await target
       .evaluate((el) => {
         const node = el as HTMLInputElement;
-        return { name: node.name || "", id: node.id || "" };
+        return { name: node.name || '', id: node.id || '' };
       })
-      .catch(() => ({ name: "", id: "" }));
+      .catch(() => ({ name: '', id: '' }));
 
-    const root = modal && (await modal.count()) > 0 ? modal : page.locator("body");
-    const escapedName = this.escapeForAttributeSelector(targetMeta.name || "");
+    const root = modal && (await modal.count()) > 0 ? modal : page.locator('body');
+    const escapedName = this.escapeForAttributeSelector(targetMeta.name || '');
     const group = targetMeta.name
       ? root.locator(`input[type="checkbox"][name="${escapedName}"]`)
       : root.locator("input[type='checkbox']");
@@ -2127,26 +2287,29 @@ export class BrowserTool {
       const meta = await checkbox
         .evaluate((el) => {
           const node = el as HTMLInputElement;
-          const id = node.id || "";
+          const id = node.id || '';
           const associatedLabel = id ? document.querySelector(`label[for="${id}"]`) : null;
           const siblingLabel =
-            (el.nextElementSibling && el.nextElementSibling.tagName.toLowerCase() === "label"
+            (el.nextElementSibling && el.nextElementSibling.tagName.toLowerCase() === 'label'
               ? el.nextElementSibling
               : null) ||
-            (el.parentElement?.tagName.toLowerCase() === "label" ? el.parentElement : null);
-          const container = node.closest("fieldset") || node.parentElement;
+            (el.parentElement?.tagName.toLowerCase() === 'label' ? el.parentElement : null);
+          const container = node.closest('fieldset') || node.parentElement;
           return {
-            value: (node.value || "").toLowerCase(),
-            aria: (node.getAttribute("aria-label") || "").toLowerCase(),
-            label: ((associatedLabel?.textContent || siblingLabel?.textContent || "") as string).toLowerCase(),
-            container: ((container?.textContent || "") as string).toLowerCase().slice(0, 220)
+            value: (node.value || '').toLowerCase(),
+            aria: (node.getAttribute('aria-label') || '').toLowerCase(),
+            label: (
+              (associatedLabel?.textContent || siblingLabel?.textContent || '') as string
+            ).toLowerCase(),
+            container: ((container?.textContent || '') as string).toLowerCase().slice(0, 220),
           };
         })
         .catch(() => null);
       if (!meta) continue;
 
       const haystack = `${meta.value} ${meta.aria} ${meta.label} ${meta.container}`;
-      const matchNo = /\bno\b/.test(haystack) || /\bfalse\b/.test(haystack) || /\bnone\b/.test(haystack);
+      const matchNo =
+        /\bno\b/.test(haystack) || /\bfalse\b/.test(haystack) || /\bnone\b/.test(haystack);
       const matchYes = /\byes\b/.test(haystack) || /\btrue\b/.test(haystack);
       const shouldPick = (wantsNo && matchNo) || (wantsYes && matchYes);
       if (!shouldPick) continue;
@@ -2163,13 +2326,13 @@ export class BrowserTool {
   private async ensureResumeAttachedBeforeSubmit(page: Page, resumePath: string): Promise<void> {
     const missingBefore = await this.findMissingRequiredFileInputs(page);
     if (!missingBefore.length) return;
-    this.log(`required file input missing before submit: ${missingBefore.join(", ")}`);
+    this.log(`required file input missing before submit: ${missingBefore.join(', ')}`);
     await this.autoAttachResumeIfAny(page, resumePath);
     const missingAfter = await this.findMissingRequiredFileInputs(page);
     if (missingAfter.length) {
-      this.log(`required file input still missing after reattach: ${missingAfter.join(", ")}`);
+      this.log(`required file input still missing after reattach: ${missingAfter.join(', ')}`);
     } else {
-      this.log("required file input restored before submit");
+      this.log('required file input restored before submit');
     }
   }
 
@@ -2178,18 +2341,20 @@ export class BrowserTool {
     modal: Locator,
     target: Locator,
     fieldName: string,
-    desiredValue: string
+    desiredValue: string,
   ): Promise<boolean> {
-    const normalizedDesired = (desiredValue || "").trim().toLowerCase();
-    const nameAttr = await target.getAttribute("name").catch(() => null);
-    const root = (await modal.count()) > 0 ? modal : page.locator("body");
+    const normalizedDesired = (desiredValue || '').trim().toLowerCase();
+    const nameAttr = await target.getAttribute('name').catch(() => null);
+    const root = (await modal.count()) > 0 ? modal : page.locator('body');
 
     const escapedField = this.escapeForAttributeSelector(fieldName);
-    const escapedName = nameAttr ? this.escapeForAttributeSelector(nameAttr) : "";
+    const escapedName = nameAttr ? this.escapeForAttributeSelector(nameAttr) : '';
 
     const group = nameAttr
       ? root.locator(`input[type="radio"][name="${escapedName}"]`)
-      : root.locator(`input[type="radio"][name="${escapedField}"], input[type="radio"][id="${escapedField}"]`);
+      : root.locator(
+          `input[type="radio"][name="${escapedField}"], input[type="radio"][id="${escapedField}"]`,
+        );
 
     const count = await group.count().catch(() => 0);
     if (!count) {
@@ -2211,31 +2376,39 @@ export class BrowserTool {
       const meta = await radio
         .evaluate((el) => {
           const input = el as HTMLInputElement;
-          const id = input.id || "";
+          const id = input.id || '';
           const associatedLabel = id ? document.querySelector(`label[for="${id}"]`) : null;
           const siblingLabel =
-            (el.nextElementSibling && el.nextElementSibling.tagName.toLowerCase() === "label"
+            (el.nextElementSibling && el.nextElementSibling.tagName.toLowerCase() === 'label'
               ? el.nextElementSibling
               : null) ||
-            (el.parentElement?.tagName.toLowerCase() === "label" ? el.parentElement : null);
+            (el.parentElement?.tagName.toLowerCase() === 'label' ? el.parentElement : null);
 
           return {
-            value: (input.value || "").toLowerCase(),
-            ariaLabel: ((input.getAttribute("aria-label") || "") as string).toLowerCase(),
+            value: (input.value || '').toLowerCase(),
+            ariaLabel: ((input.getAttribute('aria-label') || '') as string).toLowerCase(),
             id: id.toLowerCase(),
-            name: (input.name || "").toLowerCase(),
-            labelText: ((associatedLabel?.textContent || siblingLabel?.textContent || "") as string).toLowerCase()
+            name: (input.name || '').toLowerCase(),
+            labelText: (
+              (associatedLabel?.textContent || siblingLabel?.textContent || '') as string
+            ).toLowerCase(),
           };
         })
         .catch(() => null);
 
       if (!meta) continue;
       const haystack = `${meta.value} ${meta.ariaLabel} ${meta.id} ${meta.name} ${meta.labelText}`;
-      const wantsNo = normalizedDesired.includes("no") || ["false", "0", "n", "disagree"].includes(normalizedDesired);
-      const wantsYes = normalizedDesired.includes("yes") || ["true", "1", "y", "agree"].includes(normalizedDesired);
+      const wantsNo =
+        normalizedDesired.includes('no') ||
+        ['false', '0', 'n', 'disagree'].includes(normalizedDesired);
+      const wantsYes =
+        normalizedDesired.includes('yes') ||
+        ['true', '1', 'y', 'agree'].includes(normalizedDesired);
       const shouldPick =
-        (wantsNo && (/\bno\b/.test(haystack) || /\bfalse\b/.test(haystack) || /\b0\b/.test(haystack))) ||
-        (wantsYes && (/\byes\b/.test(haystack) || /\btrue\b/.test(haystack) || /\b1\b/.test(haystack))) ||
+        (wantsNo &&
+          (/\bno\b/.test(haystack) || /\bfalse\b/.test(haystack) || /\b0\b/.test(haystack))) ||
+        (wantsYes &&
+          (/\byes\b/.test(haystack) || /\btrue\b/.test(haystack) || /\b1\b/.test(haystack))) ||
         (normalizedDesired && haystack.includes(normalizedDesired));
 
       if (shouldPick) {
@@ -2250,7 +2423,7 @@ export class BrowserTool {
 
     if (fallbackFirstVisible) {
       try {
-        if (normalizedDesired.includes("no")) {
+        if (normalizedDesired.includes('no')) {
           return false;
         }
         await fallbackFirstVisible.check();
@@ -2264,35 +2437,44 @@ export class BrowserTool {
   }
 
   private shouldDefaultCheckboxToTrue(fieldName: string): boolean {
-    const f = (fieldName || "").toLowerCase();
-    if (f.includes("non-compete") || f.includes("non compete") || f.includes("prevent you from working")) {
+    const f = (fieldName || '').toLowerCase();
+    if (
+      f.includes('non-compete') ||
+      f.includes('non compete') ||
+      f.includes('prevent you from working')
+    ) {
       return false;
     }
     return (
-      f.includes("agree") ||
-      f.includes("consent") ||
-      f.includes("terms") ||
-      f.includes("privacy") ||
-      f.includes("policy") ||
-      f.includes("gdpr") ||
-      f.includes("authorize") ||
-      f.includes("store")
+      f.includes('agree') ||
+      f.includes('consent') ||
+      f.includes('terms') ||
+      f.includes('privacy') ||
+      f.includes('policy') ||
+      f.includes('gdpr') ||
+      f.includes('authorize') ||
+      f.includes('store')
     );
   }
 
-  private async detectHumanVerification(page: Page): Promise<{ blocked: boolean; reason?: string }> {
-    const body = ((await page.textContent("body").catch(() => "")) || "").toLowerCase();
+  private async detectHumanVerification(
+    page: Page,
+  ): Promise<{ blocked: boolean; reason?: string }> {
+    const body = ((await page.textContent('body').catch(() => '')) || '').toLowerCase();
     const strongTextHints = [
-      "verify you are human",
-      "security verification",
-      "please complete the captcha",
+      'verify you are human',
+      'security verification',
+      'please complete the captcha',
       "i'm not a robot",
-      "checking your browser before accessing",
-      "cf-challenge"
+      'checking your browser before accessing',
+      'cf-challenge',
     ];
     const textBlocked = strongTextHints.some((h) => body.includes(h));
     if (textBlocked) {
-      return { blocked: true, reason: "CAPTCHA/human verification detected on page" };
+      return {
+        blocked: true,
+        reason: 'CAPTCHA/human verification detected on page',
+      };
     }
 
     const selectors = [
@@ -2304,7 +2486,7 @@ export class BrowserTool {
       '[data-sitekey]',
       '[id*="captcha"]',
       '[class*="captcha"]',
-      'input[name*="captcha"]'
+      'input[name*="captcha"]',
     ];
     for (const selector of selectors) {
       const nodes = page.locator(selector);
@@ -2312,14 +2494,19 @@ export class BrowserTool {
       const sample = Math.min(count, 3);
       let hasVisible = false;
       for (let i = 0; i < sample; i += 1) {
-        if (await nodes.nth(i).isVisible().catch(() => false)) {
+        if (
+          await nodes
+            .nth(i)
+            .isVisible()
+            .catch(() => false)
+        ) {
           hasVisible = true;
           break;
         }
       }
 
       if (hasVisible) {
-        return { blocked: true, reason: "CAPTCHA widget detected on page" };
+        return { blocked: true, reason: 'CAPTCHA widget detected on page' };
       }
     }
 
@@ -2328,7 +2515,7 @@ export class BrowserTool {
 
   private async waitForCaptchaHandoff(
     page: Page,
-    options: { captchaHandoff?: boolean; captchaHandoffTimeoutMs?: number }
+    options: { captchaHandoff?: boolean; captchaHandoffTimeoutMs?: number },
   ): Promise<{ resolved: boolean; reason?: string }> {
     if (!options.captchaHandoff) {
       return { resolved: false };
@@ -2351,51 +2538,55 @@ export class BrowserTool {
     this.log(`captcha handoff timed_out after=${seconds}s url=${page.url()}`);
     return {
       resolved: false,
-      reason: `CAPTCHA still present after waiting ${seconds}s for manual verification`
+      reason: `CAPTCHA still present after waiting ${seconds}s for manual verification`,
     };
   }
 
   private overrideAnswerByContext(context: string, currentValue: string): string {
-    const c = (context || "").toLowerCase();
+    const c = (context || '').toLowerCase();
     if (
-      c.includes("have you completed the following level of education") ||
+      c.includes('have you completed the following level of education') ||
       c.includes("bachelor's degree") ||
-      c.includes("bachelors degree") ||
-      c.includes("b.tech") ||
-      c.includes("btech")
+      c.includes('bachelors degree') ||
+      c.includes('b.tech') ||
+      c.includes('btech')
     ) {
-      return "Yes";
+      return 'Yes';
     }
-    if (c.includes("official notice period") || c.includes("notice period")) {
-      return "0";
+    if (c.includes('official notice period') || c.includes('notice period')) {
+      return '0';
     }
-    if (c.includes("last working day") || c.includes("lwd")) {
-      return "N/A";
-    }
-    if (c.includes("non-compete") || c.includes("non compete") || c.includes("prevent you from working")) {
-      return "No";
+    if (c.includes('last working day') || c.includes('lwd')) {
+      return 'N/A';
     }
     if (
-      c.includes("base salary expectation") ||
-      c.includes("base salary expectations") ||
-      c.includes("salary expectation") ||
-      c.includes("salary expectations") ||
-      c.includes("expected salary") ||
-      c.includes("expected ctc") ||
-      c.includes("compensation expectation")
+      c.includes('non-compete') ||
+      c.includes('non compete') ||
+      c.includes('prevent you from working')
     ) {
-      return "20 LPA";
+      return 'No';
     }
     if (
-      c.includes("current salary") ||
-      c.includes("present salary") ||
-      c.includes("current ctc") ||
-      c.includes("existing salary")
+      c.includes('base salary expectation') ||
+      c.includes('base salary expectations') ||
+      c.includes('salary expectation') ||
+      c.includes('salary expectations') ||
+      c.includes('expected salary') ||
+      c.includes('expected ctc') ||
+      c.includes('compensation expectation')
     ) {
-      return "N/A";
+      return '20 LPA';
+    }
+    if (
+      c.includes('current salary') ||
+      c.includes('present salary') ||
+      c.includes('current ctc') ||
+      c.includes('existing salary')
+    ) {
+      return 'N/A';
     }
 
-    if (c.includes("how many years of work experience do you have with")) {
+    if (c.includes('how many years of work experience do you have with')) {
       const skill = this.extractSkillFromYearsQuestion(c);
       const years = this.inferYearsForSkill(skill);
       return String(years);
@@ -2404,23 +2595,21 @@ export class BrowserTool {
   }
 
   private async readInputValue(target: Locator): Promise<string> {
-    return target
-      .evaluate((el) => ((el as HTMLInputElement).value || "").trim())
-      .catch(() => "");
+    return target.evaluate((el) => ((el as HTMLInputElement).value || '').trim()).catch(() => '');
   }
 
   private looksValidEmail(value: string): boolean {
-    const v = (value || "").trim();
+    const v = (value || '').trim();
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
   }
 
   private looksValidPhone(value: string): boolean {
-    const digits = (value || "").replace(/\D/g, "");
+    const digits = (value || '').replace(/\D/g, '');
     return digits.length >= 10 && digits.length <= 15;
   }
 
   private isSuspiciousPhone(value: string): boolean {
-    const digits = (value || "").replace(/\D/g, "");
+    const digits = (value || '').replace(/\D/g, '');
     return /^(\d)\1{6,}$/.test(digits);
   }
 

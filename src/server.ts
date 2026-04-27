@@ -1,14 +1,14 @@
-import { createApp } from "./app";
-import { env } from "./config/env";
-import { connectMongo, closeMongo } from "./db/mongo/client";
-import { initPostgres, pgPool } from "./db/postgres/client";
+import { createApp } from './app';
+import { env } from './config/env';
+import { connectMongo, closeMongo } from './db/mongo/client';
+import { initPostgres, pgPool } from './db/postgres/client';
 
 async function bootstrap() {
   await connectMongo();
   await initPostgres();
 
   const app = createApp();
-  await app.listen({ port: env.PORT, host: "0.0.0.0" });
+  await app.listen({ port: env.PORT, host: '0.0.0.0' });
 
   const close = async () => {
     await app.close();
@@ -17,8 +17,8 @@ async function bootstrap() {
     process.exit(0);
   };
 
-  process.on("SIGINT", close);
-  process.on("SIGTERM", close);
+  process.on('SIGINT', close);
+  process.on('SIGTERM', close);
 }
 
 bootstrap().catch((err) => {

@@ -1,11 +1,18 @@
-import { chromium } from "playwright";
-import { CompanyTier, DiscoveryDiagnostics, DiscoveryFinding, JobPosting, JobProfile, JobSearchQuery } from "../types";
-import { AiScraperService } from "../services/aiScraper.service";
-import { env } from "../config/env";
+import { chromium } from 'playwright';
+import {
+  CompanyTier,
+  DiscoveryDiagnostics,
+  DiscoveryFinding,
+  JobPosting,
+  JobProfile,
+  JobSearchQuery,
+} from '../types';
+import { AiScraperService } from '../services/aiScraper.service';
+import { env } from '../config/env';
 
-interface NormalizedJob extends Omit<JobPosting, "location"> {
+interface NormalizedJob extends Omit<JobPosting, 'location'> {
   location: string;
-  strategy: "api" | "html" | "browser";
+  strategy: 'api' | 'html' | 'browser';
 }
 
 export class ScraperTool {
@@ -14,7 +21,7 @@ export class ScraperTool {
 
   async fetchJobs(input: JobProfile | JobSearchQuery): Promise<JobPosting[]> {
     const query = this.normalizeQuery(input);
-    this.log(`Starting scrape: role="${query.role}", location="${query.location || "any"}"`);
+    this.log(`Starting scrape: role="${query.role}", location="${query.location || 'any'}"`);
     const findings: DiscoveryFinding[] = [];
 
     const apiJobs = await this.fetchFromApis(query);
@@ -27,7 +34,8 @@ export class ScraperTool {
     this.log(`HTML strategy returned ${htmlJobs.length} jobs`);
 
     // Playwright fallback is triggered when simpler strategies return too few jobs.
-    const browserJobs = apiJobs.length + htmlJobs.length < 8 ? await this.fetchFromBrowser(query) : [];
+    const browserJobs =
+      apiJobs.length + htmlJobs.length < 8 ? await this.fetchFromBrowser(query) : [];
     if (browserJobs.length > 0) this.log(`Browser strategy returned ${browserJobs.length} jobs`);
 
     const counts = {
@@ -40,26 +48,29 @@ export class ScraperTool {
       skillAlignedJobs: 0,
       candidateJobs: 0,
       experienceAlignedJobs: 0,
-      prioritizedJobs: 0
+      prioritizedJobs: 0,
     };
 
     const merged = this.dedupeJobs([...apiJobs, ...indianJobs, ...htmlJobs, ...browserJobs]);
     counts.mergedJobs = merged.length;
     const sourceBreakdown = this.sourceBreakdown(merged);
     findings.push({
-      stage: "source",
-      severity: "info",
-      code: "SOURCE_BREAKDOWN",
-      message: "Collected jobs by source",
-      meta: sourceBreakdown
+      stage: 'source',
+      severity: 'info',
+      code: 'SOURCE_BREAKDOWN',
+      message: 'Collected jobs by source',
+      meta: sourceBreakdown,
     });
-    const linkedinTotal = merged.filter((job) => (job.source || "").toLowerCase().includes("linkedin")).length;
+    const linkedinTotal = merged.filter((job) =>
+      (job.source || '').toLowerCase().includes('linkedin'),
+    ).length;
     if (env.LINKEDIN_SCRAPER_ENABLED && linkedinTotal === 0) {
       findings.push({
-        stage: "source",
-        severity: "warning",
-        code: "LINKEDIN_ZERO_RESULTS",
-        message: "LinkedIn fetch returned 0 jobs. Check blocking, selectors, and location-role specificity."
+        stage: 'source',
+        severity: 'warning',
+        code: 'LINKEDIN_ZERO_RESULTS',
+        message:
+          'LinkedIn fetch returned 0 jobs. Check blocking, selectors, and location-role specificity.',
       });
     }
 
@@ -71,26 +82,28 @@ export class ScraperTool {
 
     if (actionable.length === 0) {
       if (!env.SCRAPER_ALLOW_SYNTHETIC_FALLBACK) {
-        this.log("All strategies returned 0 actionable jobs. Synthetic fallback disabled.");
+        this.log('All strategies returned 0 actionable jobs. Synthetic fallback disabled.');
         findings.push({
-          stage: "result",
-          severity: "error",
-          code: "NO_ACTIONABLE_RESULTS",
-          message: "No jobs with valid application URLs were found."
+          stage: 'result',
+          severity: 'error',
+          code: 'NO_ACTIONABLE_RESULTS',
+          message: 'No jobs with valid application URLs were found.',
         });
         this.lastDiagnostics = { counts, findings };
         return [];
       }
 
       const synthetic = this.syntheticFallbackJobs(query);
-      this.log(`All strategies returned 0 actionable jobs. Using ${synthetic.length} synthetic fallback jobs.`);
+      this.log(
+        `All strategies returned 0 actionable jobs. Using ${synthetic.length} synthetic fallback jobs.`,
+      );
       counts.prioritizedJobs = synthetic.length;
       findings.push({
-        stage: "result",
-        severity: "warning",
-        code: "SYNTHETIC_FALLBACK_USED",
-        message: "No actionable live jobs found; synthetic fallback jobs returned.",
-        meta: { syntheticCount: synthetic.length }
+        stage: 'result',
+        severity: 'warning',
+        code: 'SYNTHETIC_FALLBACK_USED',
+        message: 'No actionable live jobs found; synthetic fallback jobs returned.',
+        meta: { syntheticCount: synthetic.length },
       });
       this.lastDiagnostics = { counts, findings };
       return synthetic.slice(0, query.maxResults ?? 50);
@@ -101,24 +114,24 @@ export class ScraperTool {
     const candidates = skillAligned.length > 0 ? skillAligned : actionable;
     counts.candidateJobs = candidates.length;
     if (skillAligned.length === 0) {
-      this.log("No jobs passed skill-signal filter; falling back to URL-valid candidates");
+      this.log('No jobs passed skill-signal filter; falling back to URL-valid candidates');
       findings.push({
-        stage: "filter",
-        severity: "warning",
-        code: "SKILL_FILTER_EMPTY",
-        message: "No jobs matched skill signal filter; using URL-valid jobs as fallback."
+        stage: 'filter',
+        severity: 'warning',
+        code: 'SKILL_FILTER_EMPTY',
+        message: 'No jobs matched skill signal filter; using URL-valid jobs as fallback.',
       });
     }
 
     const experienceAligned = candidates.filter((job) => this.matchesExperienceBand(job, query));
     counts.experienceAlignedJobs = experienceAligned.length;
     if (experienceAligned.length === 0) {
-      this.log("No jobs passed strict experience filter (0-2 years)");
+      this.log('No jobs passed strict experience filter (0-2 years)');
       findings.push({
-        stage: "filter",
-        severity: "warning",
-        code: "EXPERIENCE_FILTER_EMPTY",
-        message: "All candidate jobs were excluded by strict 0-2 years experience policy."
+        stage: 'filter',
+        severity: 'warning',
+        code: 'EXPERIENCE_FILTER_EMPTY',
+        message: 'All candidate jobs were excluded by strict 0-2 years experience policy.',
       });
       this.lastDiagnostics = { counts, findings };
       return [];
@@ -128,26 +141,28 @@ export class ScraperTool {
     counts.prioritizedJobs = prioritized.length;
     if (prioritized.length === 0) {
       if (!env.SCRAPER_ALLOW_SYNTHETIC_FALLBACK) {
-        this.log("No jobs left after filters. Synthetic fallback disabled.");
+        this.log('No jobs left after filters. Synthetic fallback disabled.');
         findings.push({
-          stage: "result",
-          severity: "warning",
-          code: "PRIORITIZATION_EMPTY",
-          message: "No jobs remained after prioritization and sorting."
+          stage: 'result',
+          severity: 'warning',
+          code: 'PRIORITIZATION_EMPTY',
+          message: 'No jobs remained after prioritization and sorting.',
         });
         this.lastDiagnostics = { counts, findings };
         return [];
       }
 
       const synthetic = this.syntheticFallbackJobs(query);
-      this.log(`No jobs left after filters. Using ${synthetic.length} India-focused synthetic fallback jobs.`);
+      this.log(
+        `No jobs left after filters. Using ${synthetic.length} India-focused synthetic fallback jobs.`,
+      );
       counts.prioritizedJobs = synthetic.length;
       findings.push({
-        stage: "result",
-        severity: "warning",
-        code: "SYNTHETIC_FALLBACK_USED",
-        message: "No jobs left after filters; synthetic fallback jobs returned.",
-        meta: { syntheticCount: synthetic.length }
+        stage: 'result',
+        severity: 'warning',
+        code: 'SYNTHETIC_FALLBACK_USED',
+        message: 'No jobs left after filters; synthetic fallback jobs returned.',
+        meta: { syntheticCount: synthetic.length },
       });
       this.lastDiagnostics = { counts, findings };
       return synthetic.slice(0, query.maxResults ?? 50);
@@ -155,7 +170,7 @@ export class ScraperTool {
 
     this.lastDiagnostics = { counts, findings };
     this.log(
-      `Total deduped jobs: ${merged.length}, actionable jobs: ${actionable.length}, prioritized jobs: ${prioritized.length}`
+      `Total deduped jobs: ${merged.length}, actionable jobs: ${actionable.length}, prioritized jobs: ${prioritized.length}`,
     );
     return prioritized.slice(0, query.maxResults ?? 50);
   }
@@ -163,29 +178,29 @@ export class ScraperTool {
   getLastDiagnostics(): DiscoveryDiagnostics {
     return {
       counts: { ...this.lastDiagnostics.counts },
-      findings: [...this.lastDiagnostics.findings]
+      findings: [...this.lastDiagnostics.findings],
     };
   }
 
   private normalizeQuery(input: JobProfile | JobSearchQuery): JobSearchQuery {
-    if ("experience" in input) {
+    if ('experience' in input) {
       return {
         role: input.role,
-        location: "Hyderabad",
+        location: 'Hyderabad',
         skills: input.skills,
         filters: {
           remoteOnly: false,
           postedWithinHours: 24 * 14,
-          country: "India",
-          locations: ["Hyderabad", "Bengaluru"],
+          country: 'India',
+          locations: ['Hyderabad', 'Bengaluru'],
           minExperienceYears: 0,
-          maxExperienceYears: 2
+          maxExperienceYears: 2,
         },
         priority: {
-          companyTierOrder: ["top", "mid", "other"],
-          highPayFirst: true
+          companyTierOrder: ['top', 'mid', 'other'],
+          highPayFirst: true,
         },
-        maxResults: 50
+        maxResults: 50,
       };
     }
 
@@ -196,17 +211,17 @@ export class ScraperTool {
         remoteOnly: input.filters?.remoteOnly ?? false,
         postedWithinHours: input.filters?.postedWithinHours ?? 24 * 14,
         employmentType: input.filters?.employmentType,
-        country: input.filters?.country ?? "India",
-        locations: input.filters?.locations ?? ["Hyderabad", "Bengaluru"],
+        country: input.filters?.country ?? 'India',
+        locations: input.filters?.locations ?? ['Hyderabad', 'Bengaluru'],
         minSalaryLpa: input.filters?.minSalaryLpa,
         // Strict policy: discovery fetch is limited to early-career roles only.
         minExperienceYears: 0,
-        maxExperienceYears: 2
+        maxExperienceYears: 2,
       },
       priority: {
-        companyTierOrder: input.priority?.companyTierOrder ?? ["top", "mid", "other"],
-        highPayFirst: input.priority?.highPayFirst ?? true
-      }
+        companyTierOrder: input.priority?.companyTierOrder ?? ['top', 'mid', 'other'],
+        highPayFirst: input.priority?.highPayFirst ?? true,
+      },
     };
   }
 
@@ -217,10 +232,10 @@ export class ScraperTool {
       roles.map(async (role) => {
         const [remotive, arbeitnow] = await Promise.all([
           this.scrapeRemotiveApi(query, role),
-          this.scrapeArbeitnowApi(query, role)
+          this.scrapeArbeitnowApi(query, role),
         ]);
         return [...remotive, ...arbeitnow];
-      })
+      }),
     );
 
     return batches.flat();
@@ -229,28 +244,31 @@ export class ScraperTool {
   // Strategy 1b: India-focused sources and aggregators.
   private async fetchFromIndianSources(query: JobSearchQuery): Promise<NormalizedJob[]> {
     if (!env.INDIAN_JOB_SOURCES_ENABLED) {
-      this.log("Indian sources disabled (INDIAN_JOB_SOURCES_ENABLED=false)");
+      this.log('Indian sources disabled (INDIAN_JOB_SOURCES_ENABLED=false)');
       return [];
     }
 
     const roles = this.expandRoles(query).slice(0, 4);
-    this.log("Adzuna fetch temporarily disabled");
+    this.log('Adzuna fetch temporarily disabled');
     const [jsearch, linkedin] = await Promise.all([
       this.scrapeRapidApiJSearch(query, roles),
-      this.scrapeLinkedInPublic(query)
+      this.scrapeLinkedInPublic(query),
     ]);
 
     return [...jsearch, ...linkedin];
   }
 
-  private async scrapeAdzunaIndiaApi(query: JobSearchQuery, roles: string[]): Promise<NormalizedJob[]> {
+  private async scrapeAdzunaIndiaApi(
+    query: JobSearchQuery,
+    roles: string[],
+  ): Promise<NormalizedJob[]> {
     if (!env.ADZUNA_APP_ID || !env.ADZUNA_APP_KEY) {
-      this.log("Adzuna skipped: missing ADZUNA_APP_ID or ADZUNA_APP_KEY");
+      this.log('Adzuna skipped: missing ADZUNA_APP_ID or ADZUNA_APP_KEY');
       return [];
     }
 
     const out: NormalizedJob[] = [];
-    const where = (query.filters?.locations?.[0] || query.location || "India").trim();
+    const where = (query.filters?.locations?.[0] || query.location || 'India').trim();
 
     for (const role of roles) {
       const url =
@@ -262,7 +280,7 @@ export class ScraperTool {
         `&where=${encodeURIComponent(where)}` +
         `&content-type=application/json`;
 
-      this.log(`Adzuna request (${role}): ${url.replace(env.ADZUNA_APP_KEY, "***")}`);
+      this.log(`Adzuna request (${role}): ${url.replace(env.ADZUNA_APP_KEY, '***')}`);
       const data = await this.fetchJson<{
         results?: Array<{
           id?: string;
@@ -280,11 +298,12 @@ export class ScraperTool {
       this.log(`Adzuna raw results (${role}): ${results.length}`);
 
       for (const job of results) {
-        if (!job.title || !job.company?.display_name || !job.description || !job.redirect_url) continue;
+        if (!job.title || !job.company?.display_name || !job.description || !job.redirect_url)
+          continue;
         const salaryLpa = this.toLpa(job.salary_min, job.salary_max);
 
         out.push({
-          source: "adzuna-india",
+          source: 'adzuna-india',
           externalId: `adzuna-${job.id ?? this.slugify(`${job.company.display_name}-${job.title}`)}`,
           title: job.title,
           company: job.company.display_name,
@@ -292,14 +311,14 @@ export class ScraperTool {
           salaryLpa,
           location:
             job.location?.display_name ||
-            (job.location?.area || []).join(", ") ||
+            (job.location?.area || []).join(', ') ||
             query.filters?.locations?.[0] ||
-            "India",
+            'India',
           description: this.cleanText(job.description),
           requirements: this.inferRequirementsFromText(job.description, query.skills),
           applyUrl: job.redirect_url,
-          rawData: { strategy: "api", provider: "adzuna", role, job },
-          strategy: "api"
+          rawData: { strategy: 'api', provider: 'adzuna', role, job },
+          strategy: 'api',
         });
       }
     }
@@ -307,14 +326,17 @@ export class ScraperTool {
     return out;
   }
 
-  private async scrapeRapidApiJSearch(query: JobSearchQuery, roles: string[]): Promise<NormalizedJob[]> {
+  private async scrapeRapidApiJSearch(
+    query: JobSearchQuery,
+    roles: string[],
+  ): Promise<NormalizedJob[]> {
     if (!env.RAPIDAPI_KEY) {
-      this.log("JSearch skipped: missing RAPIDAPI_KEY");
+      this.log('JSearch skipped: missing RAPIDAPI_KEY');
       return [];
     }
 
     const out: NormalizedJob[] = [];
-    const where = (query.filters?.locations?.[0] || query.location || "India").trim();
+    const where = (query.filters?.locations?.[0] || query.location || 'India').trim();
 
     for (const role of roles) {
       const requestUrl =
@@ -323,8 +345,8 @@ export class ScraperTool {
         `&page=1&num_pages=1&country=in&date_posted=all`;
 
       const res = await this.fetchWithTimeout(requestUrl, 15_000, {
-        "X-RapidAPI-Key": env.RAPIDAPI_KEY,
-        "X-RapidAPI-Host": env.RAPIDAPI_HOST
+        'X-RapidAPI-Key': env.RAPIDAPI_KEY,
+        'X-RapidAPI-Host': env.RAPIDAPI_HOST,
       });
       if (!res) {
         this.log(`JSearch request failed (${role}): no response`);
@@ -360,12 +382,13 @@ export class ScraperTool {
       this.log(`JSearch raw rows (${role}): ${rows.length}`);
 
       for (const row of rows) {
-        if (!row.job_title || !row.employer_name || !row.job_description || !row.job_apply_link) continue;
-        const location = [row.job_city, row.job_country].filter(Boolean).join(", ") || "India";
+        if (!row.job_title || !row.employer_name || !row.job_description || !row.job_apply_link)
+          continue;
+        const location = [row.job_city, row.job_country].filter(Boolean).join(', ') || 'India';
         const salaryLpa = this.toLpa(row.job_min_salary, row.job_max_salary);
 
         out.push({
-          source: `jsearch-${(row.job_publisher || "aggregator").toLowerCase()}`,
+          source: `jsearch-${(row.job_publisher || 'aggregator').toLowerCase()}`,
           externalId: `jsearch-${row.job_id ?? this.slugify(`${row.employer_name}-${row.job_title}`)}`,
           title: row.job_title,
           company: row.employer_name,
@@ -375,8 +398,8 @@ export class ScraperTool {
           description: this.cleanText(row.job_description),
           requirements: this.inferRequirementsFromText(row.job_description, query.skills),
           applyUrl: row.job_apply_link,
-          rawData: { strategy: "api", provider: "jsearch", role, row },
-          strategy: "api"
+          rawData: { strategy: 'api', provider: 'jsearch', role, row },
+          strategy: 'api',
         });
       }
     }
@@ -386,7 +409,7 @@ export class ScraperTool {
 
   private async scrapeLinkedInPublic(query: JobSearchQuery): Promise<NormalizedJob[]> {
     if (!env.LINKEDIN_SCRAPER_ENABLED) {
-      this.log("LinkedIn public scraper disabled (LINKEDIN_SCRAPER_ENABLED=false)");
+      this.log('LinkedIn public scraper disabled (LINKEDIN_SCRAPER_ENABLED=false)');
       return [];
     }
 
@@ -396,13 +419,15 @@ export class ScraperTool {
       return guest;
     }
 
-    this.log("LinkedIn guest endpoint returned 0 jobs; trying browser fallback");
+    this.log('LinkedIn guest endpoint returned 0 jobs; trying browser fallback');
     return this.scrapeLinkedInBrowserFallback(query);
   }
 
   private async scrapeLinkedInGuestApi(query: JobSearchQuery): Promise<NormalizedJob[]> {
     const out: NormalizedJob[] = [];
-    const locations = query.filters?.locations?.length ? query.filters.locations.slice(0, 2) : ["India"];
+    const locations = query.filters?.locations?.length
+      ? query.filters.locations.slice(0, 2)
+      : ['India'];
     const starts = Array.from({ length: 8 }, (_, i) => i * 25);
 
     for (const loc of locations) {
@@ -410,26 +435,28 @@ export class ScraperTool {
       let rateLimitHits = 0;
       for (const start of starts) {
         const apiUrl =
-          "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search" +
+          'https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search' +
           `?keywords=${encodeURIComponent(query.role)}` +
           `&location=${encodeURIComponent(loc)}` +
-          "&f_E=1%2C2" +
+          '&f_E=1%2C2' +
           `&start=${start}`;
         const headers = {
-          Accept: "text/html,application/xhtml+xml",
-          "Accept-Language": "en-US,en;q=0.9",
+          Accept: 'text/html,application/xhtml+xml',
+          'Accept-Language': 'en-US,en;q=0.9',
           Referer:
             `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(query.role)}` +
             `&location=${encodeURIComponent(loc)}`,
-          "User-Agent":
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+          'User-Agent':
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         };
 
         const html = await this.fetchLinkedInGuestPageWithBackoff(apiUrl, headers);
-        if (html === "RATE_LIMITED") {
+        if (html === 'RATE_LIMITED') {
           rateLimitHits += 1;
           if (rateLimitHits >= 2) {
-            this.log(`LinkedIn guest API rate-limited repeatedly for location=${loc}; stopping guest pagination`);
+            this.log(
+              `LinkedIn guest API rate-limited repeatedly for location=${loc}; stopping guest pagination`,
+            );
             break;
           }
           continue;
@@ -461,8 +488,8 @@ export class ScraperTool {
 
   private async fetchLinkedInGuestPageWithBackoff(
     url: string,
-    headers: Record<string, string>
-  ): Promise<string | "RATE_LIMITED" | null> {
+    headers: Record<string, string>,
+  ): Promise<string | 'RATE_LIMITED' | null> {
     const maxAttempts = 3;
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       const res = await this.fetchWithTimeout(url, 15_000, headers);
@@ -470,7 +497,9 @@ export class ScraperTool {
 
       if (res.status === 429) {
         const waitMs = 800 * (attempt + 1) + Math.floor(Math.random() * 300);
-        this.log(`LinkedIn guest API rate-limited (attempt ${attempt + 1}/${maxAttempts}); waiting ${waitMs}ms`);
+        this.log(
+          `LinkedIn guest API rate-limited (attempt ${attempt + 1}/${maxAttempts}); waiting ${waitMs}ms`,
+        );
         await this.sleep(waitMs);
         continue;
       }
@@ -488,36 +517,56 @@ export class ScraperTool {
     }
 
     this.log(`LinkedIn guest API exhausted retries due to 429: ${url}`);
-    return "RATE_LIMITED";
+    return 'RATE_LIMITED';
   }
 
-  private parseLinkedInGuestCards(html: string, fallbackLocation: string, query: JobSearchQuery): NormalizedJob[] {
-    const cards = this.extractBlocks(html, /<li[\s\S]*?class="[^"]*(?:base-card|jobs-search__results-list__list-item)[^"]*"[\s\S]*?<\/li>/gi);
+  private parseLinkedInGuestCards(
+    html: string,
+    fallbackLocation: string,
+    query: JobSearchQuery,
+  ): NormalizedJob[] {
+    const cards = this.extractBlocks(
+      html,
+      /<li[\s\S]*?class="[^"]*(?:base-card|jobs-search__results-list__list-item)[^"]*"[\s\S]*?<\/li>/gi,
+    );
     const out: NormalizedJob[] = [];
 
     for (const card of cards) {
       const title =
         this.cleanText(
-          this.extractFirst(card, /<h3[^>]*class="[^"]*base-search-card__title[^"]*"[^>]*>([\s\S]*?)<\/h3>/i) ??
+          this.extractFirst(
+            card,
+            /<h3[^>]*class="[^"]*base-search-card__title[^"]*"[^>]*>([\s\S]*?)<\/h3>/i,
+          ) ??
             this.extractFirst(card, /<h3[^>]*>([\s\S]*?)<\/h3>/i) ??
-            ""
-        ) || "";
+            '',
+        ) || '';
       const company =
         this.cleanText(
-          this.extractFirst(card, /<h4[^>]*class="[^"]*base-search-card__subtitle[^"]*"[^>]*>([\s\S]*?)<\/h4>/i) ??
-            this.extractFirst(card, /<a[^>]*class="[^"]*hidden-nested-link[^"]*"[^>]*>([\s\S]*?)<\/a>/i) ??
-            ""
-        ) || "";
+          this.extractFirst(
+            card,
+            /<h4[^>]*class="[^"]*base-search-card__subtitle[^"]*"[^>]*>([\s\S]*?)<\/h4>/i,
+          ) ??
+            this.extractFirst(
+              card,
+              /<a[^>]*class="[^"]*hidden-nested-link[^"]*"[^>]*>([\s\S]*?)<\/a>/i,
+            ) ??
+            '',
+        ) || '';
       const location =
         this.cleanText(
-          this.extractFirst(card, /<span[^>]*class="[^"]*job-search-card__location[^"]*"[^>]*>([\s\S]*?)<\/span>/i) ??
-            ""
-        ) ||
-        fallbackLocation;
+          this.extractFirst(
+            card,
+            /<span[^>]*class="[^"]*job-search-card__location[^"]*"[^>]*>([\s\S]*?)<\/span>/i,
+          ) ?? '',
+        ) || fallbackLocation;
       const href =
-        this.extractFirst(card, /<a[^>]*class="[^"]*base-card__full-link[^"]*"[^>]*href="([^"]+)"/i) ||
+        this.extractFirst(
+          card,
+          /<a[^>]*class="[^"]*base-card__full-link[^"]*"[^>]*href="([^"]+)"/i,
+        ) ||
         this.extractFirst(card, /<a[^>]*href="([^"]*\/jobs\/view\/[^"]+)"/i) ||
-        "";
+        '';
 
       const applyUrl = this.normalizeLinkedInUrl(href);
       if (!title || !company || !applyUrl) continue;
@@ -528,7 +577,7 @@ export class ScraperTool {
         : `linkedin-${this.slugify(`${company}-${title}-${location}`)}`;
 
       out.push({
-        source: "linkedin-public",
+        source: 'linkedin-public',
         externalId,
         title,
         company,
@@ -538,8 +587,8 @@ export class ScraperTool {
         description: `${title} at ${company}.`,
         requirements: query.skills?.slice(0, 6) || [],
         applyUrl,
-        rawData: { strategy: "api", provider: "linkedin-guest-html" },
-        strategy: "api"
+        rawData: { strategy: 'api', provider: 'linkedin-guest-html' },
+        strategy: 'api',
       });
     }
 
@@ -549,13 +598,13 @@ export class ScraperTool {
   private normalizeLinkedInUrl(value: string): string | undefined {
     if (!value) return undefined;
     try {
-      const absolute = value.startsWith("http")
+      const absolute = value.startsWith('http')
         ? value
-        : value.startsWith("//")
+        : value.startsWith('//')
           ? `https:${value}`
-          : `https://www.linkedin.com${value.startsWith("/") ? "" : "/"}${value}`;
+          : `https://www.linkedin.com${value.startsWith('/') ? '' : '/'}${value}`;
       const url = new URL(absolute);
-      if (!url.hostname.includes("linkedin.com")) return undefined;
+      if (!url.hostname.includes('linkedin.com')) return undefined;
       return url.toString();
     } catch {
       return undefined;
@@ -565,7 +614,9 @@ export class ScraperTool {
   private async scrapeLinkedInBrowserFallback(query: JobSearchQuery): Promise<NormalizedJob[]> {
     let browser: Awaited<ReturnType<typeof chromium.launch>> | null = null;
     const out: NormalizedJob[] = [];
-    const locations = query.filters?.locations?.length ? query.filters.locations.slice(0, 2) : ["India"];
+    const locations = query.filters?.locations?.length
+      ? query.filters.locations.slice(0, 2)
+      : ['India'];
 
     try {
       browser = await this.launchChromiumWithFallback();
@@ -576,16 +627,19 @@ export class ScraperTool {
           `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(query.role)}` +
           `&location=${encodeURIComponent(loc)}`;
         this.log(`LinkedIn public scrape: ${url}`);
-        await page.goto(url, { waitUntil: "domcontentloaded" });
+        await page.goto(url, { waitUntil: 'domcontentloaded' });
 
         const rows = await page.evaluate(() => {
-          const cards = Array.from(document.querySelectorAll("li .base-card"));
+          const cards = Array.from(document.querySelectorAll('li .base-card'));
           return cards.slice(0, 25).map((card) => {
-            const title = card.querySelector(".base-search-card__title")?.textContent?.trim() || "";
-            const company = card.querySelector(".base-search-card__subtitle")?.textContent?.trim() || "";
-            const location = card.querySelector(".job-search-card__location")?.textContent?.trim() || "";
+            const title = card.querySelector('.base-search-card__title')?.textContent?.trim() || '';
+            const company =
+              card.querySelector('.base-search-card__subtitle')?.textContent?.trim() || '';
+            const location =
+              card.querySelector('.job-search-card__location')?.textContent?.trim() || '';
             const applyUrl =
-              (card.querySelector("a.base-card__full-link") as HTMLAnchorElement | null)?.href || "";
+              (card.querySelector('a.base-card__full-link') as HTMLAnchorElement | null)?.href ||
+              '';
             return { title, company, location, applyUrl };
           });
         });
@@ -593,7 +647,7 @@ export class ScraperTool {
         for (const row of rows) {
           if (!row.title || !row.company || !row.applyUrl) continue;
           out.push({
-            source: "linkedin-public",
+            source: 'linkedin-public',
             externalId: `linkedin-${this.slugify(`${row.company}-${row.title}-${loc}`)}`,
             title: row.title,
             company: row.company,
@@ -603,15 +657,17 @@ export class ScraperTool {
             description: `${row.title} at ${row.company}.`,
             requirements: query.skills?.slice(0, 6) || [],
             applyUrl: row.applyUrl,
-            rawData: { strategy: "browser", provider: "linkedin-public", row },
-            strategy: "browser"
+            rawData: { strategy: 'browser', provider: 'linkedin-public', row },
+            strategy: 'browser',
           });
         }
       }
 
       return out;
     } catch (error) {
-      this.log(`LinkedIn public scrape failed: ${error instanceof Error ? error.message : "unknown error"}`);
+      this.log(
+        `LinkedIn public scrape failed: ${error instanceof Error ? error.message : 'unknown error'}`,
+      );
       return [];
     } finally {
       if (browser) await browser.close();
@@ -641,17 +697,19 @@ export class ScraperTool {
 
       normalized.push({
         externalId: `remotive-${String(job.id ?? job.url ?? job.title)}`,
-        source: "remotive",
+        source: 'remotive',
         title: job.title,
         company: job.company_name,
         companyTier: this.inferCompanyTier(job.company_name),
-        salaryLpa: this.estimateSalaryLpa(`${job.title} ${job.description} ${(job.tags || []).join(" ")}`),
-        location: job.candidate_required_location || query.location || "Remote",
+        salaryLpa: this.estimateSalaryLpa(
+          `${job.title} ${job.description} ${(job.tags || []).join(' ')}`,
+        ),
+        location: job.candidate_required_location || query.location || 'Remote',
         description: this.cleanText(job.description),
         requirements: (job.tags || []).slice(0, 8),
         applyUrl: job.url,
         rawData: job,
-        strategy: "api"
+        strategy: 'api',
       });
     }
 
@@ -670,31 +728,35 @@ export class ScraperTool {
         job_types?: string[];
         url?: string;
       }>;
-    }>("https://www.arbeitnow.com/api/job-board-api");
+    }>('https://www.arbeitnow.com/api/job-board-api');
 
     const allJobs = data?.data ?? [];
     const roleTokens = this.tokenize(role);
 
     const normalized: NormalizedJob[] = [];
     for (const job of allJobs) {
-      const title = (job.title || "").toLowerCase();
-      const titleMatchesRole = roleTokens.some((token) => token.length >= 3 && title.includes(token));
+      const title = (job.title || '').toLowerCase();
+      const titleMatchesRole = roleTokens.some(
+        (token) => token.length >= 3 && title.includes(token),
+      );
       if (!titleMatchesRole) continue;
       if (!job.title || !job.company_name || !job.description) continue;
 
       normalized.push({
         externalId: `arbeitnow-${job.slug ?? job.url ?? job.title}`,
-        source: "arbeitnow",
+        source: 'arbeitnow',
         title: job.title,
         company: job.company_name,
         companyTier: this.inferCompanyTier(job.company_name),
-        salaryLpa: this.estimateSalaryLpa(`${job.title} ${job.description} ${(job.tags || []).join(" ")}`),
-        location: job.location || query.location || "Remote",
+        salaryLpa: this.estimateSalaryLpa(
+          `${job.title} ${job.description} ${(job.tags || []).join(' ')}`,
+        ),
+        location: job.location || query.location || 'Remote',
         description: this.cleanText(job.description),
         requirements: [...(job.tags || []), ...(job.job_types || [])].slice(0, 8),
         applyUrl: job.url,
         rawData: job,
-        strategy: "api"
+        strategy: 'api',
       });
     }
 
@@ -708,32 +770,44 @@ export class ScraperTool {
     const html = await this.fetchText(url);
     if (!html) return [];
 
-    const cards = this.extractBlocks(html, /<li[^>]*class="[^"]*feature[^"]*"[^>]*>[\s\S]*?<\/li>/gi);
+    const cards = this.extractBlocks(
+      html,
+      /<li[^>]*class="[^"]*feature[^"]*"[^>]*>[\s\S]*?<\/li>/gi,
+    );
 
     const normalized: NormalizedJob[] = [];
 
     for (const [index, card] of cards.entries()) {
-      const title = this.extractFirst(card, /<span[^>]*class="[^"]*title[^"]*"[^>]*>([\s\S]*?)<\/span>/i);
-      const company = this.extractFirst(card, /<span[^>]*class="[^"]*company[^"]*"[^>]*>([\s\S]*?)<\/span>/i);
-      const location = this.extractFirst(card, /<span[^>]*class="[^"]*region[^"]*"[^>]*>([\s\S]*?)<\/span>/i);
+      const title = this.extractFirst(
+        card,
+        /<span[^>]*class="[^"]*title[^"]*"[^>]*>([\s\S]*?)<\/span>/i,
+      );
+      const company = this.extractFirst(
+        card,
+        /<span[^>]*class="[^"]*company[^"]*"[^>]*>([\s\S]*?)<\/span>/i,
+      );
+      const location = this.extractFirst(
+        card,
+        /<span[^>]*class="[^"]*region[^"]*"[^>]*>([\s\S]*?)<\/span>/i,
+      );
       const href = this.extractFirst(card, /href="([^"]+)"/i);
 
       if (!title || !company || !href) continue;
 
-      const applyUrl = href.startsWith("http") ? href : `https://weworkremotely.com${href}`;
+      const applyUrl = href.startsWith('http') ? href : `https://weworkremotely.com${href}`;
       normalized.push({
         externalId: `wwr-${index}-${this.slugify(title)}`,
-        source: "weworkremotely",
+        source: 'weworkremotely',
         title: this.cleanText(title),
         company: this.cleanText(company),
         companyTier: this.inferCompanyTier(this.cleanText(company)),
         salaryLpa: this.estimateSalaryLpa(`${title} ${card}`),
-        location: this.cleanText(location || query.location || "Remote"),
+        location: this.cleanText(location || query.location || 'Remote'),
         description: `Role discovered via HTML scraping from We Work Remotely for query: ${query.role}`,
         requirements: query.skills?.slice(0, 6) || [],
         applyUrl,
         rawData: { snippet: card.slice(0, 1_000) },
-        strategy: "html"
+        strategy: 'html',
       });
     }
 
@@ -742,13 +816,13 @@ export class ScraperTool {
     }
 
     this.log(`HTML selector extraction low; trying ${env.AI_SCRAPER_PROVIDER} scraper assist`);
-    const aiJobs = await this.aiScraper.extractJobsFromHtml("weworkremotely", html, query);
+    const aiJobs = await this.aiScraper.extractJobsFromHtml('weworkremotely', html, query);
     const enrichedAi: NormalizedJob[] = aiJobs.map((job) => ({
       ...job,
-      location: job.location || query.location || "Remote",
+      location: job.location || query.location || 'Remote',
       companyTier: this.inferCompanyTier(job.company),
       salaryLpa: job.salaryLpa ?? this.estimateSalaryLpa(`${job.title} ${job.description}`),
-      strategy: "html"
+      strategy: 'html',
     }));
 
     return [...normalized, ...enrichedAi];
@@ -759,28 +833,29 @@ export class ScraperTool {
     let browser: Awaited<ReturnType<typeof chromium.launch>> | null = null;
 
     try {
-      this.log("Browser fallback started");
+      this.log('Browser fallback started');
       browser = await this.launchChromiumWithFallback();
       const page = await browser.newPage();
       await page.goto(
         `https://weworkremotely.com/remote-jobs/search?term=${encodeURIComponent(query.role)}`,
-        { waitUntil: "domcontentloaded" }
+        { waitUntil: 'domcontentloaded' },
       );
 
       const jobs = await page.evaluate(() => {
-        const cards = Array.from(document.querySelectorAll("li.feature"));
+        const cards = Array.from(document.querySelectorAll('li.feature'));
         return cards.slice(0, 30).map((card, index) => {
-          const title = card.querySelector("span.title")?.textContent?.trim() || "";
-          const company = card.querySelector("span.company")?.textContent?.trim() || "";
-          const location = card.querySelector("span.region")?.textContent?.trim() || "Remote";
-          const href = (card.querySelector("a") as HTMLAnchorElement | null)?.getAttribute("href") || "";
+          const title = card.querySelector('span.title')?.textContent?.trim() || '';
+          const company = card.querySelector('span.company')?.textContent?.trim() || '';
+          const location = card.querySelector('span.region')?.textContent?.trim() || 'Remote';
+          const href =
+            (card.querySelector('a') as HTMLAnchorElement | null)?.getAttribute('href') || '';
 
           return {
             idx: index,
             title,
             company,
             location,
-            href
+            href,
           };
         });
       });
@@ -791,23 +866,27 @@ export class ScraperTool {
 
         normalized.push({
           externalId: `wwr-browser-${job.idx}-${this.slugify(job.title)}`,
-          source: "weworkremotely",
+          source: 'weworkremotely',
           title: job.title,
           company: job.company,
           companyTier: this.inferCompanyTier(job.company),
           salaryLpa: this.estimateSalaryLpa(`${job.title} ${job.company}`),
-          location: job.location || query.location || "Remote",
+          location: job.location || query.location || 'Remote',
           description: `Role discovered via browser automation fallback for query: ${query.role}`,
           requirements: query.skills?.slice(0, 6) || [],
-          applyUrl: job.href.startsWith("http") ? job.href : `https://weworkremotely.com${job.href}`,
+          applyUrl: job.href.startsWith('http')
+            ? job.href
+            : `https://weworkremotely.com${job.href}`,
           rawData: job,
-          strategy: "browser"
+          strategy: 'browser',
         });
       }
 
       return normalized;
     } catch (error) {
-      this.log(`Browser strategy failed: ${error instanceof Error ? error.message : "unknown error"}`);
+      this.log(
+        `Browser strategy failed: ${error instanceof Error ? error.message : 'unknown error'}`,
+      );
       return [];
     } finally {
       if (browser) {
@@ -835,8 +914,8 @@ export class ScraperTool {
           applyUrl: job.applyUrl,
           rawData: {
             ...((job.rawData as Record<string, unknown>) || {}),
-            strategy: job.strategy
-          }
+            strategy: job.strategy,
+          },
         });
       }
     }
@@ -845,7 +924,7 @@ export class ScraperTool {
   }
 
   private makeDedupeKey(job: JobPosting): string {
-    const byUrl = (job.applyUrl || "").trim().toLowerCase();
+    const byUrl = (job.applyUrl || '').trim().toLowerCase();
     if (byUrl) return byUrl;
 
     return `${job.source}:${job.company}:${job.title}`.toLowerCase();
@@ -865,7 +944,9 @@ export class ScraperTool {
     try {
       return (await res.json()) as T;
     } catch (error) {
-      this.log(`JSON parse failed for ${url}: ${error instanceof Error ? error.message : "unknown error"}`);
+      this.log(
+        `JSON parse failed for ${url}: ${error instanceof Error ? error.message : 'unknown error'}`,
+      );
       return null;
     }
   }
@@ -873,7 +954,7 @@ export class ScraperTool {
   private async fetchText(
     url: string,
     extraHeaders?: Record<string, string>,
-    timeoutMs = 12_000
+    timeoutMs = 12_000,
   ): Promise<string | null> {
     const res = await this.fetchWithTimeout(url, timeoutMs, extraHeaders);
     if (!res) {
@@ -888,7 +969,9 @@ export class ScraperTool {
     try {
       return await res.text();
     } catch (error) {
-      this.log(`Text parse failed for ${url}: ${error instanceof Error ? error.message : "unknown error"}`);
+      this.log(
+        `Text parse failed for ${url}: ${error instanceof Error ? error.message : 'unknown error'}`,
+      );
       return null;
     }
   }
@@ -896,7 +979,7 @@ export class ScraperTool {
   private async fetchWithTimeout(
     url: string,
     timeoutMs = 12_000,
-    extraHeaders?: Record<string, string>
+    extraHeaders?: Record<string, string>,
   ): Promise<Response | null> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -904,13 +987,15 @@ export class ScraperTool {
     try {
       return await fetch(url, {
         headers: {
-          "User-Agent": "my-job-agent/0.1 (+hybrid-scraper)",
-          ...(extraHeaders || {})
+          'User-Agent': 'my-job-agent/0.1 (+hybrid-scraper)',
+          ...(extraHeaders || {}),
         },
-        signal: controller.signal
+        signal: controller.signal,
       });
     } catch (error) {
-      this.log(`Fetch error for ${url}: ${error instanceof Error ? error.message : "unknown error"}`);
+      this.log(
+        `Fetch error for ${url}: ${error instanceof Error ? error.message : 'unknown error'}`,
+      );
       return null;
     } finally {
       clearTimeout(timer);
@@ -918,51 +1003,51 @@ export class ScraperTool {
   }
 
   private syntheticFallbackJobs(query: JobSearchQuery): JobPosting[] {
-    const role = query.role || "Backend Engineer";
-    const skills = (query.skills || ["Node.js", "TypeScript", "MongoDB"]).slice(0, 6);
+    const role = query.role || 'Backend Engineer';
+    const skills = (query.skills || ['Node.js', 'TypeScript', 'MongoDB']).slice(0, 6);
     const preferredLocations = query.filters?.locations?.length
       ? query.filters.locations
       : this.defaultIndiaLocations();
     return [
       {
-        source: "seed-fallback",
+        source: 'seed-fallback',
         externalId: `seed-${this.slugify(role)}-1`,
         title: `${role} (Fallback)`,
-        company: "Microsoft",
-        companyTier: "top",
+        company: 'Microsoft',
+        companyTier: 'top',
         salaryLpa: 42,
-        location: preferredLocations[0] || "Hyderabad",
+        location: preferredLocations[0] || 'Hyderabad',
         description: `Fallback job generated because external sources returned no data for role "${role}".`,
         requirements: skills,
-        applyUrl: "https://example.com/apply/fallback-1",
-        rawData: { strategy: "fallback", reason: "no_external_results" }
+        applyUrl: 'https://example.com/apply/fallback-1',
+        rawData: { strategy: 'fallback', reason: 'no_external_results' },
       },
       {
-        source: "seed-fallback",
+        source: 'seed-fallback',
         externalId: `seed-${this.slugify(role)}-2`,
         title: `${role} - Platform (Fallback)`,
-        company: "Atlassian",
-        companyTier: "top",
+        company: 'Atlassian',
+        companyTier: 'top',
         salaryLpa: 38,
-        location: preferredLocations[1] || "Bengaluru",
+        location: preferredLocations[1] || 'Bengaluru',
         description: `Fallback platform role for ${role}.`,
         requirements: skills,
-        applyUrl: "https://example.com/apply/fallback-2",
-        rawData: { strategy: "fallback", reason: "no_external_results" }
+        applyUrl: 'https://example.com/apply/fallback-2',
+        rawData: { strategy: 'fallback', reason: 'no_external_results' },
       },
       {
-        source: "seed-fallback",
+        source: 'seed-fallback',
         externalId: `seed-${this.slugify(role)}-3`,
         title: `${role} - Product (Fallback)`,
-        company: "Razorpay",
-        companyTier: "mid",
+        company: 'Razorpay',
+        companyTier: 'mid',
         salaryLpa: 30,
-        location: preferredLocations[2] || "Pune",
+        location: preferredLocations[2] || 'Pune',
         description: `Fallback mid-tier role for ${role}.`,
         requirements: skills,
-        applyUrl: "https://example.com/apply/fallback-3",
-        rawData: { strategy: "fallback", reason: "no_external_results" }
-      }
+        applyUrl: 'https://example.com/apply/fallback-3',
+        rawData: { strategy: 'fallback', reason: 'no_external_results' },
+      },
     ];
   }
 
@@ -976,20 +1061,20 @@ export class ScraperTool {
 
   private async launchChromiumWithFallback(): Promise<Awaited<ReturnType<typeof chromium.launch>>> {
     try {
-      this.log("Attempting standard Chromium launch...");
+      this.log('Attempting standard Chromium launch...');
       return await chromium.launch({ headless: true });
     } catch (error) {
-      this.log("Standard launch failed. Attempting Catalina-compatible fallback...");
+      this.log('Standard launch failed. Attempting Catalina-compatible fallback...');
 
       try {
-        this.log("Attempting native Firefox launch...");
-    const { firefox } = require("playwright"); 
-    return await firefox.launch({ headless: true });
+        this.log('Attempting native Firefox launch...');
+        const { firefox } = require('playwright');
+        return await firefox.launch({ headless: true });
       } catch (fallbackError) {
         this.log(
           `Critical error: all browser launch attempts failed: ${
-            fallbackError instanceof Error ? fallbackError.message : "unknown error"
-          }`
+            fallbackError instanceof Error ? fallbackError.message : 'unknown error'
+          }`,
         );
         throw fallbackError;
       }
@@ -1007,7 +1092,7 @@ export class ScraperTool {
   private sourceBreakdown(jobs: JobPosting[]): Record<string, number> {
     const counts: Record<string, number> = {};
     for (const job of jobs) {
-      const key = (job.source || "unknown").toLowerCase();
+      const key = (job.source || 'unknown').toLowerCase();
       counts[key] = (counts[key] || 0) + 1;
     }
     return counts;
@@ -1025,9 +1110,9 @@ export class ScraperTool {
         skillAlignedJobs: 0,
         candidateJobs: 0,
         experienceAlignedJobs: 0,
-        prioritizedJobs: 0
+        prioritizedJobs: 0,
       },
-      findings: []
+      findings: [],
     };
   }
 
@@ -1035,7 +1120,7 @@ export class ScraperTool {
     if (!value) return false;
     try {
       const parsed = new URL(value);
-      return parsed.protocol === "http:" || parsed.protocol === "https:";
+      return parsed.protocol === 'http:' || parsed.protocol === 'https:';
     } catch {
       return false;
     }
@@ -1045,25 +1130,25 @@ export class ScraperTool {
     const inferred = this.tokenize(text)
       .filter((token) =>
         [
-          "node",
-          "nodejs",
-          "typescript",
-          "javascript",
-          "mongodb",
-          "postgresql",
-          "redis",
-          "aws",
-          "azure",
-          "gcp",
-          "docker",
-          "kubernetes",
-          "api",
-          "microservices",
-          "react",
-          "python",
-          "java",
-          "golang"
-        ].includes(token)
+          'node',
+          'nodejs',
+          'typescript',
+          'javascript',
+          'mongodb',
+          'postgresql',
+          'redis',
+          'aws',
+          'azure',
+          'gcp',
+          'docker',
+          'kubernetes',
+          'api',
+          'microservices',
+          'react',
+          'python',
+          'java',
+          'golang',
+        ].includes(token),
       )
       .slice(0, 8);
     const merged = [...(seedSkills || []).map((s) => s.toLowerCase()), ...inferred];
@@ -1071,7 +1156,7 @@ export class ScraperTool {
   }
 
   private toLpa(min?: number, max?: number): number | undefined {
-    const nums = [min, max].filter((x): x is number => typeof x === "number" && x > 0);
+    const nums = [min, max].filter((x): x is number => typeof x === 'number' && x > 0);
     if (nums.length === 0) return undefined;
     const avg = nums.reduce((a, b) => a + b, 0) / nums.length;
     // Adzuna/JSearch are often annual local currency; for India this can already be INR.
@@ -1093,27 +1178,32 @@ export class ScraperTool {
   }
 
   private expandRoles(query: JobSearchQuery): string[] {
-    const base = (query.role || "Backend Engineer").trim();
+    const base = (query.role || 'Backend Engineer').trim();
     const skills = (query.skills || []).map((s) => s.toLowerCase());
     const out = new Set<string>([base]);
 
-    out.add("Backend Engineer");
-    out.add("Backend Developer");
-    out.add("Software Engineer");
-    out.add("Full Stack Engineer");
-    out.add("Node.js Developer");
+    out.add('Backend Engineer');
+    out.add('Backend Developer');
+    out.add('Software Engineer');
+    out.add('Full Stack Engineer');
+    out.add('Node.js Developer');
 
-    if (skills.some((s) => s.includes("typescript") || s.includes("javascript"))) {
-      out.add("TypeScript Backend Engineer");
-      out.add("JavaScript Backend Engineer");
+    if (skills.some((s) => s.includes('typescript') || s.includes('javascript'))) {
+      out.add('TypeScript Backend Engineer');
+      out.add('JavaScript Backend Engineer');
     }
-    if (skills.some((s) => s.includes("aws") || s.includes("gcp") || s.includes("docker"))) {
-      out.add("Cloud Backend Engineer");
+    if (skills.some((s) => s.includes('aws') || s.includes('gcp') || s.includes('docker'))) {
+      out.add('Cloud Backend Engineer');
     }
-    if (skills.some((s) => s.includes("llm") || s.includes("rag") || s.includes("langchain") || s.includes("ai"))) {
-      out.add("AI Engineer");
-      out.add("LLM Engineer");
-      out.add("Applied AI Engineer");
+    if (
+      skills.some(
+        (s) =>
+          s.includes('llm') || s.includes('rag') || s.includes('langchain') || s.includes('ai'),
+      )
+    ) {
+      out.add('AI Engineer');
+      out.add('LLM Engineer');
+      out.add('Applied AI Engineer');
     }
 
     return [...out].slice(0, 7);
@@ -1123,25 +1213,26 @@ export class ScraperTool {
     const skills = (query.skills || []).map((s) => s.toLowerCase());
     if (skills.length === 0) return true;
 
-    const haystack = `${job.title} ${job.description} ${(job.requirements || []).join(" ")}`.toLowerCase();
+    const haystack =
+      `${job.title} ${job.description} ${(job.requirements || []).join(' ')}`.toLowerCase();
     const aliases: Record<string, string[]> = {
-      "node.js": ["node.js", "nodejs", "node"],
-      typescript: ["typescript", "ts"],
-      javascript: ["javascript", "js"],
-      mongodb: ["mongodb", "mongo"],
-      postgresql: ["postgresql", "postgres", "psql"],
-      sql: ["sql", "mysql", "postgresql"],
-      redis: ["redis"],
-      aws: ["aws", "amazon web services"],
-      gcp: ["gcp", "google cloud"],
-      docker: ["docker", "container"],
-      "express.js": ["express", "express.js"],
-      next: ["next", "next.js"],
-      react: ["react", "reactjs"],
-      graphql: ["graphql"],
-      rag: ["rag", "retrieval augmented generation"],
-      llm: ["llm", "large language model", "gpt"],
-      langchain: ["langchain"]
+      'node.js': ['node.js', 'nodejs', 'node'],
+      typescript: ['typescript', 'ts'],
+      javascript: ['javascript', 'js'],
+      mongodb: ['mongodb', 'mongo'],
+      postgresql: ['postgresql', 'postgres', 'psql'],
+      sql: ['sql', 'mysql', 'postgresql'],
+      redis: ['redis'],
+      aws: ['aws', 'amazon web services'],
+      gcp: ['gcp', 'google cloud'],
+      docker: ['docker', 'container'],
+      'express.js': ['express', 'express.js'],
+      next: ['next', 'next.js'],
+      react: ['react', 'reactjs'],
+      graphql: ['graphql'],
+      rag: ['rag', 'retrieval augmented generation'],
+      llm: ['llm', 'large language model', 'gpt'],
+      langchain: ['langchain'],
     };
 
     const signals = skills.flatMap((skill) => aliases[skill] || [skill]);
@@ -1156,9 +1247,14 @@ export class ScraperTool {
     const maxAllowed = query.filters?.maxExperienceYears;
     if (minAllowed === undefined && maxAllowed === undefined) return true;
 
-    const text = `${job.title} ${job.description} ${(job.requirements || []).join(" ")}`.toLowerCase();
+    const text =
+      `${job.title} ${job.description} ${(job.requirements || []).join(' ')}`.toLowerCase();
     const seniorTitleKeywords = /(senior|staff|principal|lead|sr\.?|sde\s*2|sde\s*3|architect)/i;
-    if (maxAllowed !== undefined && maxAllowed <= 2 && seniorTitleKeywords.test(job.title.toLowerCase())) {
+    if (
+      maxAllowed !== undefined &&
+      maxAllowed <= 2 &&
+      seniorTitleKeywords.test(job.title.toLowerCase())
+    ) {
       return false;
     }
 
@@ -1216,11 +1312,13 @@ export class ScraperTool {
   }
 
   private prioritizeJobs(jobs: JobPosting[], query: JobSearchQuery): JobPosting[] {
-    const preferredLocations = (query.filters?.locations ?? ["Hyderabad", "Bengaluru"]).map((l) => l.toLowerCase());
-    const country = (query.filters?.country ?? "").toLowerCase().trim();
-    const tierOrder = query.priority?.companyTierOrder ?? ["top", "mid", "other"];
+    const preferredLocations = (query.filters?.locations ?? ['Hyderabad', 'Bengaluru']).map((l) =>
+      l.toLowerCase(),
+    );
+    const country = (query.filters?.country ?? '').toLowerCase().trim();
+    const tierOrder = query.priority?.companyTierOrder ?? ['top', 'mid', 'other'];
     const tierRank = new Map<CompanyTier, number>(
-      tierOrder.map((tier, idx) => [tier, idx] as const)
+      tierOrder.map((tier, idx) => [tier, idx] as const),
     );
     const highPayFirst = query.priority?.highPayFirst ?? true;
     const minSalaryLpa = query.filters?.minSalaryLpa ?? 0;
@@ -1243,16 +1341,16 @@ export class ScraperTool {
       const bLoc = this.locationPriority(b.location, preferredLocations);
       if (aLoc !== bLoc) return aLoc - bLoc;
 
-      const aLinkedIn = (a.source || "").includes("linkedin") ? 0 : 1;
-      const bLinkedIn = (b.source || "").includes("linkedin") ? 0 : 1;
+      const aLinkedIn = (a.source || '').includes('linkedin') ? 0 : 1;
+      const bLinkedIn = (b.source || '').includes('linkedin') ? 0 : 1;
       if (aLinkedIn !== bLinkedIn) return aLinkedIn - bLinkedIn;
 
       const aEarly = this.isEarlyCareerRole(a) ? 0 : 1;
       const bEarly = this.isEarlyCareerRole(b) ? 0 : 1;
       if (aEarly !== bEarly) return aEarly - bEarly;
 
-      const aTier = tierRank.get(a.companyTier ?? "other") ?? 99;
-      const bTier = tierRank.get(b.companyTier ?? "other") ?? 99;
+      const aTier = tierRank.get(a.companyTier ?? 'other') ?? 99;
+      const bTier = tierRank.get(b.companyTier ?? 'other') ?? 99;
       if (aTier !== bTier) return aTier - bTier;
 
       const aHighPay = (a.salaryLpa ?? 0) >= 15 ? 0 : 1;
@@ -1264,7 +1362,7 @@ export class ScraperTool {
         if (salaryDelta !== 0) return salaryDelta;
       }
 
-      return (a.title || "").localeCompare(b.title || "");
+      return (a.title || '').localeCompare(b.title || '');
     });
   }
 
@@ -1272,14 +1370,14 @@ export class ScraperTool {
     if (!location) return false;
     const value = location.toLowerCase();
     return preferred.some((city) => {
-      if (city === "bangalore" || city === "bengaluru") {
-        return value.includes("bangalore") || value.includes("bengaluru");
+      if (city === 'bangalore' || city === 'bengaluru') {
+        return value.includes('bangalore') || value.includes('bengaluru');
       }
-      if (city === "hyderabad") return value.includes("hyderabad");
-      if (city === "pune") return value.includes("pune");
-      if (city === "chennai") return value.includes("chennai");
-      if (city === "india") return value.includes("india");
-      if (city === "remote") return value.includes("remote");
+      if (city === 'hyderabad') return value.includes('hyderabad');
+      if (city === 'pune') return value.includes('pune');
+      if (city === 'chennai') return value.includes('chennai');
+      if (city === 'india') return value.includes('india');
+      if (city === 'remote') return value.includes('remote');
       return value.includes(city);
     });
   }
@@ -1288,14 +1386,14 @@ export class ScraperTool {
     if (!location) return false;
     const value = location.toLowerCase();
 
-    if (country === "india") {
+    if (country === 'india') {
       return (
-        value.includes("india") ||
-        value.includes("hyderabad") ||
-        value.includes("bangalore") ||
-        value.includes("bengaluru") ||
-        value.includes("pune") ||
-        value.includes("chennai")
+        value.includes('india') ||
+        value.includes('hyderabad') ||
+        value.includes('bangalore') ||
+        value.includes('bengaluru') ||
+        value.includes('pune') ||
+        value.includes('chennai')
       );
     }
 
@@ -1305,37 +1403,37 @@ export class ScraperTool {
   private inferCompanyTier(company: string): CompanyTier {
     const c = company.toLowerCase();
     const topTier = [
-      "google",
-      "microsoft",
-      "amazon",
-      "meta",
-      "apple",
-      "adobe",
-      "atlassian",
-      "salesforce",
-      "uber",
-      "nvidia",
-      "oracle",
-      "walmart"
+      'google',
+      'microsoft',
+      'amazon',
+      'meta',
+      'apple',
+      'adobe',
+      'atlassian',
+      'salesforce',
+      'uber',
+      'nvidia',
+      'oracle',
+      'walmart',
     ];
     const midTier = [
-      "razorpay",
-      "swiggy",
-      "zomato",
-      "phonepe",
-      "freshworks",
-      "zoho",
-      "paytm",
-      "meesho",
-      "cred",
-      "postman",
-      "browserstack",
-      "thoughtworks"
+      'razorpay',
+      'swiggy',
+      'zomato',
+      'phonepe',
+      'freshworks',
+      'zoho',
+      'paytm',
+      'meesho',
+      'cred',
+      'postman',
+      'browserstack',
+      'thoughtworks',
     ];
 
-    if (topTier.some((name) => c.includes(name))) return "top";
-    if (midTier.some((name) => c.includes(name))) return "mid";
-    return "other";
+    if (topTier.some((name) => c.includes(name))) return 'top';
+    if (midTier.some((name) => c.includes(name))) return 'mid';
+    return 'other';
   }
 
   private estimateSalaryLpa(text: string): number | undefined {
@@ -1347,7 +1445,7 @@ export class ScraperTool {
 
     const inrMatch = value.match(/(?:₹|inr)\\s*([\\d,]{5,})/i);
     if (inrMatch) {
-      const annual = Number(inrMatch[1].replace(/,/g, ""));
+      const annual = Number(inrMatch[1].replace(/,/g, ''));
       if (!Number.isNaN(annual) && annual > 0) return Math.round(annual / 100000);
     }
 
@@ -1361,7 +1459,7 @@ export class ScraperTool {
   }
 
   private defaultIndiaLocations(): string[] {
-    return ["Hyderabad", "Bengaluru"];
+    return ['Hyderabad', 'Bengaluru'];
   }
 
   private locationPriority(location: string | undefined, preferred: string[]): number {
@@ -1369,19 +1467,21 @@ export class ScraperTool {
     const value = location.toLowerCase();
     for (let i = 0; i < preferred.length; i += 1) {
       const city = preferred[i];
-      if (city === "bangalore" || city === "bengaluru") {
-        if (value.includes("bangalore") || value.includes("bengaluru")) return i;
+      if (city === 'bangalore' || city === 'bengaluru') {
+        if (value.includes('bangalore') || value.includes('bengaluru')) return i;
       } else if (value.includes(city)) {
         return i;
       }
     }
-    if (value.includes("india") || value.includes("remote")) return preferred.length + 1;
+    if (value.includes('india') || value.includes('remote')) return preferred.length + 1;
     return preferred.length + 2;
   }
 
   private isEarlyCareerRole(job: JobPosting): boolean {
     const text = `${job.title} ${job.description}`.toLowerCase();
-    return /(junior|entry[\s-]?level|fresher|intern|internship|graduate|new grad|trainee|associate)/i.test(text);
+    return /(junior|entry[\s-]?level|fresher|intern|internship|graduate|new grad|trainee|associate)/i.test(
+      text,
+    );
   }
 
   private extractBlocks(input: string, pattern: RegExp): string[] {
@@ -1395,10 +1495,16 @@ export class ScraperTool {
   }
 
   private cleanText(input: string): string {
-    return input.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    return input
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 
   private slugify(input: string): string {
-    return input.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+    return input
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '');
   }
 }

@@ -1,5 +1,5 @@
-import { LLMService } from "./llm.service";
-import { JobPosting, JobProfile, ScoredJob } from "../types";
+import { LLMService } from './llm.service';
+import { JobPosting, JobProfile, ScoredJob } from '../types';
 
 export class ScoringService {
   constructor(private readonly llm: LLMService) {}
@@ -12,7 +12,7 @@ export class ScoringService {
       ...job,
       score,
       apply,
-      reasoning
+      reasoning,
     };
   }
 }

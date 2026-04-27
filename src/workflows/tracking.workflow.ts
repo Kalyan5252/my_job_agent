@@ -1,4 +1,4 @@
-import { TrackerAgent } from "../agents/tracker.agent";
+import { TrackerAgent } from '../agents/tracker.agent';
 
 export class TrackingWorkflow {
   private readonly tracker = new TrackerAgent();

@@ -1,5 +1,5 @@
-import { ApplicationAgent } from "../agents/application.agent";
-import { ApplicationRunOptions, ApplicationRunResult, JobProfile, ScoredJob } from "../types";
+import { ApplicationAgent } from '../agents/application.agent';
+import { ApplicationRunOptions, ApplicationRunResult, JobProfile, ScoredJob } from '../types';
 
 export class ApplyWorkflow {
   private readonly agent = new ApplicationAgent();
