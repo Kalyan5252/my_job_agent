@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
-import { chromium } from "playwright";
+import { chromium, firefox } from "playwright";
 import { env } from "../src/config/env";
 
 async function main(): Promise<void> {
@@ -13,8 +13,20 @@ async function main(): Promise<void> {
 
   const storagePath = resolveStoragePath(env.LINKEDIN_STORAGE_STATE_PATH);
   fs.mkdirSync(path.dirname(storagePath), { recursive: true });
+  let browser
+  try{
+   browser = await chromium.launch({ headless: false, slowMo: 50 });
 
-  const browser = await chromium.launch({ headless: false, slowMo: 50 });
+  }catch(e){
+    try{
+      console.error("Failed to launch Chromium with default settings retrying with firefox...");
+      browser = await firefox.launch({ headless: false, slowMo: 50 });
+    }
+    catch(e){
+      console.error("Failed to launch Firefox as well. Please ensure you have at least one of these browsers installed and try again.");
+      throw e;
+    }
+  }
   const context = await browser.newContext();
   const page = await context.newPage();
 

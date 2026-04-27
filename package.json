@@ -15,7 +15,7 @@
     "resume:import": "python3 scripts/import_resume_profile.py --pdf \"data/resume/Kalyan Show (1).pdf\"",
     "resume:import:secondary": "python3 scripts/import_resume_profile.py --pdf \"data/resume/Kalyan Show (2).pdf\" --out-text \"data/profile/resume.secondary.txt\" --out-profile \"data/profile/candidateProfile.secondary.json\"",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/server.js",
+    "start": "node dist/src/server.js",
     "start:worker": "node dist/queues/worker.js",
     "start:cron": "node dist/scripts/cronJobs.js",
     "typecheck": "tsc --noEmit"
@@ -34,7 +34,7 @@
     "node-cron": "^3.0.3",
     "openai": "^4.56.0",
     "pg": "^8.12.0",
-    "playwright": "^1.47.0",
+    "playwright": "1.59.1",
     "zod": "^3.23.8"
   },
   "devDependencies": {
@@ -43,7 +43,8 @@
     "@types/node": "^22.7.4",
     "@types/node-cron": "^3.0.11",
     "@types/pg": "^8.20.0",
-    "tsx": "^4.19.1",
+    "esbuild": "^0.18.20",
+    "tsx": "^4.7.1",
     "typescript": "^5.6.2"
   }
 }

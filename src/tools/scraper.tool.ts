@@ -1,6 +1,6 @@
 import { chromium } from "playwright";
-import { CompanyTier, JobPosting, JobProfile, JobSearchQuery } from "../types";
-import { GroqScraperService } from "../services/groqScraper.service";
+import { CompanyTier, DiscoveryDiagnostics, DiscoveryFinding, JobPosting, JobProfile, JobSearchQuery } from "../types";
+import { AiScraperService } from "../services/aiScraper.service";
 import { env } from "../config/env";
 
 interface NormalizedJob extends Omit<JobPosting, "location"> {
@@ -9,11 +9,13 @@ interface NormalizedJob extends Omit<JobPosting, "location"> {
 }
 
 export class ScraperTool {
-  private readonly groqScraper = new GroqScraperService();
+  private readonly aiScraper = new AiScraperService();
+  private lastDiagnostics: DiscoveryDiagnostics = this.emptyDiagnostics();
 
   async fetchJobs(input: JobProfile | JobSearchQuery): Promise<JobPosting[]> {
     const query = this.normalizeQuery(input);
     this.log(`Starting scrape: role="${query.role}", location="${query.location || "any"}"`);
+    const findings: DiscoveryFinding[] = [];
 
     const apiJobs = await this.fetchFromApis(query);
     this.log(`API strategy returned ${apiJobs.length} jobs`);
@@ -28,8 +30,41 @@ export class ScraperTool {
     const browserJobs = apiJobs.length + htmlJobs.length < 8 ? await this.fetchFromBrowser(query) : [];
     if (browserJobs.length > 0) this.log(`Browser strategy returned ${browserJobs.length} jobs`);
 
+    const counts = {
+      apiJobs: apiJobs.length,
+      indianJobs: indianJobs.length,
+      htmlJobs: htmlJobs.length,
+      browserJobs: browserJobs.length,
+      mergedJobs: 0,
+      actionableJobs: 0,
+      skillAlignedJobs: 0,
+      candidateJobs: 0,
+      experienceAlignedJobs: 0,
+      prioritizedJobs: 0
+    };
+
     const merged = this.dedupeJobs([...apiJobs, ...indianJobs, ...htmlJobs, ...browserJobs]);
+    counts.mergedJobs = merged.length;
+    const sourceBreakdown = this.sourceBreakdown(merged);
+    findings.push({
+      stage: "source",
+      severity: "info",
+      code: "SOURCE_BREAKDOWN",
+      message: "Collected jobs by source",
+      meta: sourceBreakdown
+    });
+    const linkedinTotal = merged.filter((job) => (job.source || "").toLowerCase().includes("linkedin")).length;
+    if (env.LINKEDIN_SCRAPER_ENABLED && linkedinTotal === 0) {
+      findings.push({
+        stage: "source",
+        severity: "warning",
+        code: "LINKEDIN_ZERO_RESULTS",
+        message: "LinkedIn fetch returned 0 jobs. Check blocking, selectors, and location-role specificity."
+      });
+    }
+
     const actionable = merged.filter((job) => this.hasValidApplyUrl(job.applyUrl));
+    counts.actionableJobs = actionable.length;
     if (merged.length !== actionable.length) {
       this.log(`Dropped ${merged.length - actionable.length} jobs without valid apply URL`);
     }
@@ -37,42 +72,99 @@ export class ScraperTool {
     if (actionable.length === 0) {
       if (!env.SCRAPER_ALLOW_SYNTHETIC_FALLBACK) {
         this.log("All strategies returned 0 actionable jobs. Synthetic fallback disabled.");
+        findings.push({
+          stage: "result",
+          severity: "error",
+          code: "NO_ACTIONABLE_RESULTS",
+          message: "No jobs with valid application URLs were found."
+        });
+        this.lastDiagnostics = { counts, findings };
         return [];
       }
 
       const synthetic = this.syntheticFallbackJobs(query);
       this.log(`All strategies returned 0 actionable jobs. Using ${synthetic.length} synthetic fallback jobs.`);
+      counts.prioritizedJobs = synthetic.length;
+      findings.push({
+        stage: "result",
+        severity: "warning",
+        code: "SYNTHETIC_FALLBACK_USED",
+        message: "No actionable live jobs found; synthetic fallback jobs returned.",
+        meta: { syntheticCount: synthetic.length }
+      });
+      this.lastDiagnostics = { counts, findings };
       return synthetic.slice(0, query.maxResults ?? 50);
     }
 
     const skillAligned = actionable.filter((job) => this.hasSkillSignal(job, query));
+    counts.skillAlignedJobs = skillAligned.length;
     const candidates = skillAligned.length > 0 ? skillAligned : actionable;
+    counts.candidateJobs = candidates.length;
     if (skillAligned.length === 0) {
       this.log("No jobs passed skill-signal filter; falling back to URL-valid candidates");
+      findings.push({
+        stage: "filter",
+        severity: "warning",
+        code: "SKILL_FILTER_EMPTY",
+        message: "No jobs matched skill signal filter; using URL-valid jobs as fallback."
+      });
     }
 
     const experienceAligned = candidates.filter((job) => this.matchesExperienceBand(job, query));
+    counts.experienceAlignedJobs = experienceAligned.length;
     if (experienceAligned.length === 0) {
       this.log("No jobs passed strict experience filter (0-2 years)");
+      findings.push({
+        stage: "filter",
+        severity: "warning",
+        code: "EXPERIENCE_FILTER_EMPTY",
+        message: "All candidate jobs were excluded by strict 0-2 years experience policy."
+      });
+      this.lastDiagnostics = { counts, findings };
       return [];
     }
 
     const prioritized = this.prioritizeJobs(experienceAligned, query);
+    counts.prioritizedJobs = prioritized.length;
     if (prioritized.length === 0) {
       if (!env.SCRAPER_ALLOW_SYNTHETIC_FALLBACK) {
         this.log("No jobs left after filters. Synthetic fallback disabled.");
+        findings.push({
+          stage: "result",
+          severity: "warning",
+          code: "PRIORITIZATION_EMPTY",
+          message: "No jobs remained after prioritization and sorting."
+        });
+        this.lastDiagnostics = { counts, findings };
         return [];
       }
 
       const synthetic = this.syntheticFallbackJobs(query);
       this.log(`No jobs left after filters. Using ${synthetic.length} India-focused synthetic fallback jobs.`);
+      counts.prioritizedJobs = synthetic.length;
+      findings.push({
+        stage: "result",
+        severity: "warning",
+        code: "SYNTHETIC_FALLBACK_USED",
+        message: "No jobs left after filters; synthetic fallback jobs returned.",
+        meta: { syntheticCount: synthetic.length }
+      });
+      this.lastDiagnostics = { counts, findings };
       return synthetic.slice(0, query.maxResults ?? 50);
     }
 
+    this.lastDiagnostics = { counts, findings };
     this.log(
       `Total deduped jobs: ${merged.length}, actionable jobs: ${actionable.length}, prioritized jobs: ${prioritized.length}`
     );
     return prioritized.slice(0, query.maxResults ?? 50);
+  }
+
+  getLastDiagnostics(): DiscoveryDiagnostics {
+    return {
+      counts: { ...this.lastDiagnostics.counts },
+      findings: [...this.lastDiagnostics.findings]
+    };
   }
 
   private normalizeQuery(input: JobProfile | JobSearchQuery): JobSearchQuery {
@@ -298,12 +390,185 @@ export class ScraperTool {
       return [];
     }
 
+    const guest = await this.scrapeLinkedInGuestApi(query);
+    if (guest.length > 0) {
+      this.log(`LinkedIn guest endpoint returned ${guest.length} jobs`);
+      return guest;
+    }
+
+    this.log("LinkedIn guest endpoint returned 0 jobs; trying browser fallback");
+    return this.scrapeLinkedInBrowserFallback(query);
+  }
+
+  private async scrapeLinkedInGuestApi(query: JobSearchQuery): Promise<NormalizedJob[]> {
+    const out: NormalizedJob[] = [];
+    const locations = query.filters?.locations?.length ? query.filters.locations.slice(0, 2) : ["India"];
+    const starts = Array.from({ length: 8 }, (_, i) => i * 25);
+
+    for (const loc of locations) {
+      let emptyPages = 0;
+      let rateLimitHits = 0;
+      for (const start of starts) {
+        const apiUrl =
+          "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search" +
+          `?keywords=${encodeURIComponent(query.role)}` +
+          `&location=${encodeURIComponent(loc)}` +
+          "&f_E=1%2C2" +
+          `&start=${start}`;
+        const headers = {
+          Accept: "text/html,application/xhtml+xml",
+          "Accept-Language": "en-US,en;q=0.9",
+          Referer:
+            `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(query.role)}` +
+            `&location=${encodeURIComponent(loc)}`,
+          "User-Agent":
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        };
+
+        const html = await this.fetchLinkedInGuestPageWithBackoff(apiUrl, headers);
+        if (html === "RATE_LIMITED") {
+          rateLimitHits += 1;
+          if (rateLimitHits >= 2) {
+            this.log(`LinkedIn guest API rate-limited repeatedly for location=${loc}; stopping guest pagination`);
+            break;
+          }
+          continue;
+        }
+        if (!html) {
+          emptyPages += 1;
+          if (emptyPages >= 2) break;
+          await this.sleep(350);
+          continue;
+        }
+
+        const parsed = this.parseLinkedInGuestCards(html, loc, query);
+        if (parsed.length === 0) {
+          emptyPages += 1;
+          if (emptyPages >= 2) break;
+          await this.sleep(350);
+          continue;
+        }
+
+        emptyPages = 0;
+        rateLimitHits = 0;
+        out.push(...parsed);
+        await this.sleep(450);
+      }
+    }
+
+    return out;
+  }
+
+  private async fetchLinkedInGuestPageWithBackoff(
+    url: string,
+    headers: Record<string, string>
+  ): Promise<string | "RATE_LIMITED" | null> {
+    const maxAttempts = 3;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const res = await this.fetchWithTimeout(url, 15_000, headers);
+      if (!res) return null;
+
+      if (res.status === 429) {
+        const waitMs = 800 * (attempt + 1) + Math.floor(Math.random() * 300);
+        this.log(`LinkedIn guest API rate-limited (attempt ${attempt + 1}/${maxAttempts}); waiting ${waitMs}ms`);
+        await this.sleep(waitMs);
+        continue;
+      }
+
+      if (!res.ok) {
+        this.log(`LinkedIn guest API failed with status ${res.status}: ${url}`);
+        return null;
+      }
+
+      try {
+        return await res.text();
+      } catch {
+        return null;
+      }
+    }
+
+    this.log(`LinkedIn guest API exhausted retries due to 429: ${url}`);
+    return "RATE_LIMITED";
+  }
+
+  private parseLinkedInGuestCards(html: string, fallbackLocation: string, query: JobSearchQuery): NormalizedJob[] {
+    const cards = this.extractBlocks(html, /<li[\s\S]*?class="[^"]*(?:base-card|jobs-search__results-list__list-item)[^"]*"[\s\S]*?<\/li>/gi);
+    const out: NormalizedJob[] = [];
+
+    for (const card of cards) {
+      const title =
+        this.cleanText(
+          this.extractFirst(card, /<h3[^>]*class="[^"]*base-search-card__title[^"]*"[^>]*>([\s\S]*?)<\/h3>/i) ??
+            this.extractFirst(card, /<h3[^>]*>([\s\S]*?)<\/h3>/i) ??
+            ""
+        ) || "";
+      const company =
+        this.cleanText(
+          this.extractFirst(card, /<h4[^>]*class="[^"]*base-search-card__subtitle[^"]*"[^>]*>([\s\S]*?)<\/h4>/i) ??
+            this.extractFirst(card, /<a[^>]*class="[^"]*hidden-nested-link[^"]*"[^>]*>([\s\S]*?)<\/a>/i) ??
+            ""
+        ) || "";
+      const location =
+        this.cleanText(
+          this.extractFirst(card, /<span[^>]*class="[^"]*job-search-card__location[^"]*"[^>]*>([\s\S]*?)<\/span>/i) ??
+            ""
+        ) ||
+        fallbackLocation;
+      const href =
+        this.extractFirst(card, /<a[^>]*class="[^"]*base-card__full-link[^"]*"[^>]*href="([^"]+)"/i) ||
+        this.extractFirst(card, /<a[^>]*href="([^"]*\/jobs\/view\/[^"]+)"/i) ||
+        "";
+
+      const applyUrl = this.normalizeLinkedInUrl(href);
+      if (!title || !company || !applyUrl) continue;
+
+      const idMatch = applyUrl.match(/\/jobs\/view\/(\d+)/i);
+      const externalId = idMatch?.[1]
+        ? `linkedin-${idMatch[1]}`
+        : `linkedin-${this.slugify(`${company}-${title}-${location}`)}`;
+
+      out.push({
+        source: "linkedin-public",
+        externalId,
+        title,
+        company,
+        companyTier: this.inferCompanyTier(company),
+        salaryLpa: this.estimateSalaryLpa(`${title} ${company}`),
+        location,
+        description: `${title} at ${company}.`,
+        requirements: query.skills?.slice(0, 6) || [],
+        applyUrl,
+        rawData: { strategy: "api", provider: "linkedin-guest-html" },
+        strategy: "api"
+      });
+    }
+
+    return out;
+  }
+
+  private normalizeLinkedInUrl(value: string): string | undefined {
+    if (!value) return undefined;
+    try {
+      const absolute = value.startsWith("http")
+        ? value
+        : value.startsWith("//")
+          ? `https:${value}`
+          : `https://www.linkedin.com${value.startsWith("/") ? "" : "/"}${value}`;
+      const url = new URL(absolute);
+      if (!url.hostname.includes("linkedin.com")) return undefined;
+      return url.toString();
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async scrapeLinkedInBrowserFallback(query: JobSearchQuery): Promise<NormalizedJob[]> {
     let browser: Awaited<ReturnType<typeof chromium.launch>> | null = null;
     const out: NormalizedJob[] = [];
     const locations = query.filters?.locations?.length ? query.filters.locations.slice(0, 2) : ["India"];
 
     try {
-      browser = await chromium.launch({ headless: true });
+      browser = await this.launchChromiumWithFallback();
       const page = await browser.newPage();
 
       for (const loc of locations) {
@@ -472,13 +737,13 @@ export class ScraperTool {
       });
     }
 
-    if (normalized.length >= 5 || !this.groqScraper.isEnabled()) {
+    if (normalized.length >= 5 || !this.aiScraper.isEnabled()) {
       return normalized;
     }
 
-    this.log("HTML selector extraction low; trying Groq scraper assist");
-    const groqJobs = await this.groqScraper.extractJobsFromHtml("weworkremotely", html, query);
-    const enrichedGroq: NormalizedJob[] = groqJobs.map((job) => ({
+    this.log(`HTML selector extraction low; trying ${env.AI_SCRAPER_PROVIDER} scraper assist`);
+    const aiJobs = await this.aiScraper.extractJobsFromHtml("weworkremotely", html, query);
+    const enrichedAi: NormalizedJob[] = aiJobs.map((job) => ({
       ...job,
       location: job.location || query.location || "Remote",
       companyTier: this.inferCompanyTier(job.company),
@@ -486,7 +751,7 @@ export class ScraperTool {
       strategy: "html"
     }));
 
-    return [...normalized, ...enrichedGroq];
+    return [...normalized, ...enrichedAi];
   }
 
   // Strategy 3: Browser automation fallback for dynamic pages.
@@ -495,7 +760,7 @@ export class ScraperTool {
 
     try {
       this.log("Browser fallback started");
-      browser = await chromium.launch({ headless: true });
+      browser = await this.launchChromiumWithFallback();
       const page = await browser.newPage();
       await page.goto(
         `https://weworkremotely.com/remote-jobs/search?term=${encodeURIComponent(query.role)}`,
@@ -605,8 +870,12 @@ export class ScraperTool {
     }
   }
 
-  private async fetchText(url: string): Promise<string | null> {
-    const res = await this.fetchWithTimeout(url);
+  private async fetchText(
+    url: string,
+    extraHeaders?: Record<string, string>,
+    timeoutMs = 12_000
+  ): Promise<string | null> {
+    const res = await this.fetchWithTimeout(url, timeoutMs, extraHeaders);
     if (!res) {
       this.log(`Request failed (no response): ${url}`);
       return null;
@@ -705,8 +974,61 @@ export class ScraperTool {
       .filter(Boolean);
   }
 
+  private async launchChromiumWithFallback(): Promise<Awaited<ReturnType<typeof chromium.launch>>> {
+    try {
+      this.log("Attempting standard Chromium launch...");
+      return await chromium.launch({ headless: true });
+    } catch (error) {
+      this.log("Standard launch failed. Attempting Catalina-compatible fallback...");
+
+      try {
+        this.log("Attempting native Firefox launch...");
+    const { firefox } = require("playwright"); 
+    return await firefox.launch({ headless: true });
+      } catch (fallbackError) {
+        this.log(
+          `Critical error: all browser launch attempts failed: ${
+            fallbackError instanceof Error ? fallbackError.message : "unknown error"
+          }`
+        );
+        throw fallbackError;
+      }
+    }
+  }
+
   private log(message: string): void {
     console.log(`[scraper] ${message}`);
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private sourceBreakdown(jobs: JobPosting[]): Record<string, number> {
+    const counts: Record<string, number> = {};
+    for (const job of jobs) {
+      const key = (job.source || "unknown").toLowerCase();
+      counts[key] = (counts[key] || 0) + 1;
+    }
+    return counts;
+  }
+
+  private emptyDiagnostics(): DiscoveryDiagnostics {
+    return {
+      counts: {
+        apiJobs: 0,
+        indianJobs: 0,
+        htmlJobs: 0,
+        browserJobs: 0,
+        mergedJobs: 0,
+        actionableJobs: 0,
+        skillAlignedJobs: 0,
+        candidateJobs: 0,
+        experienceAlignedJobs: 0,
+        prioritizedJobs: 0
+      },
+      findings: []
+    };
   }
 
   private hasValidApplyUrl(value: string | undefined): boolean {
