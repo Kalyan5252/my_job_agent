@@ -2,11 +2,37 @@ import OpenAI from "openai";
 import { env } from "../config/env";
 import { FormField, JobPosting, JobProfile } from "../types";
 
+type LlmProvider = "openai" | "openrouter";
+type JobStatus = "applied" | "rejected" | "interview" | "unknown";
+type LlmTask =
+  | "jobScoring"
+  | "jobDecision"
+  | "fieldMapping"
+  | "statusClassification";
+
+export class OpenRouterRateLimitError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly retryAfterMs?: number
+  ) {
+    super(message);
+    this.name = "OpenRouterRateLimitError";
+  }
+}
+
 export class LLMService {
-  private client: OpenAI | null;
+  private readonly openAiClient: OpenAI | null;
+  private readonly openRouterClient: OpenAI | null;
 
   constructor() {
-    this.client = env.OPENAI_API_KEY ? new OpenAI({ apiKey: env.OPENAI_API_KEY }) : null;
+    this.openAiClient = env.OPENAI_API_KEY ? new OpenAI({ apiKey: env.OPENAI_API_KEY }) : null;
+    this.openRouterClient = env.OPENROUTER_API_KEY
+      ? new OpenAI({
+          apiKey: env.OPENROUTER_API_KEY,
+          baseURL: "https://openrouter.ai/api/v1"
+        })
+      : null;
   }
 
   private fallbackScore(profile: JobProfile, text: string): number {
@@ -17,9 +43,9 @@ export class LLMService {
   }
 
   async scoreJob(profile: JobProfile, job: JobPosting): Promise<{ score: number; reasoning: string }> {
-    if (!this.client) {
+    if (!this.hasProviderClient()) {
       const score = this.fallbackScore(profile, `${job.title} ${job.description}`);
-      return { score, reasoning: "fallback keyword score (no OPENAI_API_KEY)" };
+      return { score, reasoning: `fallback keyword score (no ${this.providerKeyLabel()})` };
     }
 
     const prompt = `Profile: ${JSON.stringify(profile)}\nJob: ${JSON.stringify({
@@ -29,13 +55,22 @@ export class LLMService {
       requirements: job.requirements ?? []
     })}\nReturn strict JSON: {"score":number,"reasoning":string}`;
 
-    const res = await this.createResponseWithFallback(
-      env.OPENAI_MODEL_JOB_SCORING,
-      prompt,
-      "gpt-5.4-mini"
-    );
+    let text: string;
+    try {
+      text = await this.createResponseWithFallback("jobScoring", prompt);
+    } catch (error) {
+      if (isOpenRouterRateLimitError(error)) {
+        throw error;
+      }
 
-    const text = res.output_text || "";
+      const score = this.fallbackScore(profile, `${job.title} ${job.description}`);
+      const detail = summarizeLlmError(error);
+      console.warn(
+        `[llm] scoreJob failed provider=${env.AI_PROVIDER} model=${this.modelFor("jobScoring", env.AI_PROVIDER)} detail=${detail}`
+      );
+      return { score, reasoning: `fallback keyword score (llm request failed: ${compactDetail(detail)})` };
+    }
+
     const parsed = safeParseJson<{ score: number; reasoning: string }>(text);
 
     if (!parsed) {
@@ -50,16 +85,21 @@ export class LLMService {
   }
 
   async decideApply(score: number, reasoning: string): Promise<boolean> {
-    if (!this.client) return score >= 70;
+    if (!this.hasProviderClient()) return score >= 70;
 
     const prompt = `Given score=${score} and reasoning="${reasoning}", decide apply=true/false with strict JSON: {"apply":boolean}`;
-    const res = await this.createResponseWithFallback(
-      env.OPENAI_MODEL_JOB_DECISION,
-      prompt,
-      "gpt-5.4"
-    );
+    let text: string;
+    try {
+      text = await this.createResponseWithFallback("jobDecision", prompt);
+    } catch (error) {
+      if (isOpenRouterRateLimitError(error)) {
+        throw error;
+      }
 
-    const parsed = safeParseJson<{ apply: boolean }>(res.output_text || "");
+      return score >= 70;
+    }
+
+    const parsed = safeParseJson<{ apply: boolean }>(text);
     return parsed?.apply ?? score >= 70;
   }
 
@@ -67,7 +107,7 @@ export class LLMService {
     fields: FormField[],
     context: { profile: JobProfile; resumeSummary: string; job: JobPosting }
   ): Promise<Record<string, string>> {
-    if (!this.client) {
+    if (!this.hasProviderClient()) {
       return Object.fromEntries(
         fields.map((field) => [field.name, this.fallbackFieldValue(field, context.profile.role)])
       );
@@ -77,13 +117,8 @@ export class LLMService {
       context
     )}\nReturn strict JSON object where keys are field names and values are answers.`;
 
-    const res = await this.createResponseWithFallback(
-      env.OPENAI_MODEL_FIELD_MAPPING,
-      prompt,
-      "gpt-5.4-mini"
-    );
-
-    const mapped = safeParseJson<Record<string, string>>(res.output_text || "");
+    const text = await this.createResponseWithFallback("fieldMapping", prompt);
+    const mapped = safeParseJson<Record<string, string>>(text);
     if (!mapped) {
       return Object.fromEntries(
         fields.map((field) => [field.name, this.fallbackFieldValue(field, context.profile.role)])
@@ -93,10 +128,10 @@ export class LLMService {
     return mapped;
   }
 
-  async classifyEmailStatus(emailText: string): Promise<"applied" | "rejected" | "interview" | "unknown"> {
+  async classifyEmailStatus(emailText: string): Promise<JobStatus> {
     const lower = emailText.toLowerCase();
 
-    if (!this.client) {
+    if (!this.hasProviderClient()) {
       if (lower.includes("regret") || lower.includes("not moving forward")) return "rejected";
       if (lower.includes("interview") || lower.includes("schedule")) return "interview";
       if (lower.includes("received") || lower.includes("application")) return "applied";
@@ -104,14 +139,8 @@ export class LLMService {
     }
 
     const prompt = `Classify status from email text. Return strict JSON: {"status":"applied|rejected|interview|unknown"}. Text=${emailText}`;
-    const res = await this.createResponseWithFallback(
-      env.OPENAI_MODEL_STATUS_CLASSIFICATION,
-      prompt,
-      "gpt-5.4-mini"
-    );
-    const parsed = safeParseJson<{ status: "applied" | "rejected" | "interview" | "unknown" }>(
-      res.output_text || ""
-    );
+    const text = await this.createResponseWithFallback("statusClassification", prompt);
+    const parsed = safeParseJson<{ status: JobStatus }>(text);
 
     return parsed?.status ?? "unknown";
   }
@@ -127,45 +156,136 @@ export class LLMService {
     return "N/A";
   }
 
-  private async createResponseWithFallback(
-    model: string,
-    input: string,
-    fallbackModel: string
-  ): Promise<OpenAI.Responses.Response> {
-    if (!this.client) {
+  private hasProviderClient(): boolean {
+    if (env.AI_PROVIDER === "openrouter") return Boolean(this.openRouterClient);
+    return Boolean(this.openAiClient);
+  }
+
+  private providerKeyLabel(): string {
+    return env.AI_PROVIDER === "openrouter" ? "OPENROUTER_API_KEY" : "OPENAI_API_KEY";
+  }
+
+  private async createResponseWithFallback(task: LlmTask, input: string): Promise<string> {
+    if (env.AI_PROVIDER === "openrouter") {
+      try {
+        return await this.createOpenRouterResponse(input, this.modelFor(task, "openrouter"));
+      } catch (error) {
+        if (isOpenRouterRateLimitError(error)) {
+          throw error;
+        }
+
+        if (this.openAiClient) {
+          const { primary, fallback } = this.openAiModelsFor(task);
+          console.warn(
+            `[llm] OpenRouter failed for task=${task}; falling back to OpenAI. detail=${summarizeLlmError(error)}`
+          );
+          return await this.createOpenAiResponse(input, primary, fallback);
+        }
+
+        throw error;
+      }
+    }
+
+    const { primary, fallback } = this.openAiModelsFor(task);
+    return await this.createOpenAiResponse(input, primary, fallback);
+  }
+
+  private async createOpenAiResponse(input: string, model: string, fallbackModel: string): Promise<string> {
+    if (!this.openAiClient) {
       throw new Error("OpenAI client is not initialized");
     }
 
-    const preferredModel = this.normalizeLegacyModel(model, fallbackModel);
+    const preferredModel = normalizeOpenAiModel(model, fallbackModel);
 
     try {
-      return await this.client.responses.create({
+      const res = await this.openAiClient.responses.create({
         model: preferredModel,
         input
       });
+      return res.output_text || "";
     } catch (error) {
-      const modelNotFound = this.isModelNotFound(error);
+      const modelNotFound = isOpenAiModelNotFound(error);
       if (!modelNotFound || preferredModel === fallbackModel) {
         throw error;
       }
 
-      return await this.client.responses.create({
+      const res = await this.openAiClient.responses.create({
         model: fallbackModel,
         input
       });
+      return res.output_text || "";
     }
   }
 
-  private normalizeLegacyModel(model: string, fallbackModel: string): string {
-    if (model === "gpt-5.3") return fallbackModel;
-    if (model === "gpt-5-mini") return "gpt-5.4-mini";
-    return model;
+  private async createOpenRouterResponse(input: string, model: string): Promise<string> {
+    if (!this.openRouterClient) {
+      throw new Error("OpenRouter client is not initialized");
+    }
+
+    const resolvedModel = normalizeOpenRouterModel(model);
+    const retries = env.OPENROUTER_RATE_LIMIT_MAX_RETRIES;
+    let attempt = 0;
+
+    while (true) {
+      try {
+        const res = await this.openRouterClient.chat.completions.create({
+          model: resolvedModel,
+          temperature: 0.1,
+          messages: [{ role: "user", content: input }]
+        });
+        return res.choices[0]?.message?.content ?? "";
+      } catch (error) {
+        const status = getHttpStatus(error);
+        if (status !== 429) {
+          throw error;
+        }
+
+        const retryAfterMs = parseRetryAfterMs(getHeaderValue(error, "retry-after"));
+        if (attempt >= retries) {
+          throw new OpenRouterRateLimitError(
+            `OpenRouter request failed with status ${status}`,
+            status,
+            retryAfterMs
+          );
+        }
+
+        await sleep(retryAfterMs ?? env.OPENROUTER_RATE_LIMIT_RETRY_DELAY_MS * (attempt + 1));
+        attempt += 1;
+      }
+    }
   }
 
-  private isModelNotFound(error: unknown): boolean {
-    if (!error || typeof error !== "object") return false;
-    const maybe = error as { code?: string; error?: { code?: string } };
-    return maybe.code === "model_not_found" || maybe.error?.code === "model_not_found";
+  private modelFor(task: LlmTask, provider: LlmProvider): string {
+    const models = {
+      openai: {
+        jobScoring: env.OPENAI_MODEL_JOB_SCORING,
+        jobDecision: env.OPENAI_MODEL_JOB_DECISION,
+        fieldMapping: env.OPENAI_MODEL_FIELD_MAPPING,
+        statusClassification: env.OPENAI_MODEL_STATUS_CLASSIFICATION
+      },
+      openrouter: {
+        jobScoring: env.OPENROUTER_MODEL_JOB_SCORING,
+        jobDecision: env.OPENROUTER_MODEL_JOB_DECISION,
+        fieldMapping: env.OPENROUTER_MODEL_FIELD_MAPPING,
+        statusClassification: env.OPENROUTER_MODEL_STATUS_CLASSIFICATION
+      }
+    } as const;
+
+    return models[provider][task];
+  }
+
+  private openAiModelsFor(task: LlmTask): { primary: string; fallback: string } {
+    if (task === "jobDecision") {
+      return {
+        primary: this.modelFor(task, "openai"),
+        fallback: "gpt-5.4"
+      };
+    }
+
+    return {
+      primary: this.modelFor(task, "openai"),
+      fallback: "gpt-5.4-mini"
+    };
   }
 }
 
@@ -182,6 +302,116 @@ function safeParseJson<T>(raw: string): T | null {
   }
 }
 
+function parseRetryAfterMs(value: string | null | undefined): number | undefined {
+  if (!value) return undefined;
+
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return seconds * 1000;
+  }
+
+  const absolute = Date.parse(value);
+  if (Number.isNaN(absolute)) return undefined;
+
+  return Math.max(0, absolute - Date.now());
+}
+
+function getHttpStatus(error: unknown): number | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  const maybe = error as { status?: number; response?: { status?: number } };
+  return maybe.status ?? maybe.response?.status;
+}
+
+function getHeaderValue(error: unknown, headerName: string): string | undefined {
+  if (!error || typeof error !== "object") return undefined;
+
+  const maybe = error as {
+    headers?: Headers;
+    response?: { headers?: Headers | Record<string, string> };
+  };
+
+  if (maybe.headers instanceof Headers) {
+    return maybe.headers.get(headerName) ?? undefined;
+  }
+
+  const headers = maybe.response?.headers;
+  if (headers instanceof Headers) {
+    return headers.get(headerName) ?? undefined;
+  }
+
+  if (headers && typeof headers === "object") {
+    const value = Object.entries(headers).find(
+      ([key]) => key.toLowerCase() === headerName.toLowerCase()
+    )?.[1];
+
+    return Array.isArray(value) ? value[0] : value;
+  }
+
+  return undefined;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function isOpenRouterRateLimitError(error: unknown): error is OpenRouterRateLimitError {
+  return error instanceof OpenRouterRateLimitError;
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+function normalizeOpenAiModel(model: string, fallbackModel: string): string {
+  if (model === "gpt-5.3") return fallbackModel;
+  if (model === "gpt-5-mini") return "gpt-5.4-mini";
+  return model;
+}
+
+function isOpenAiModelNotFound(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const maybe = error as { code?: string; error?: { code?: string } };
+  return maybe.code === "model_not_found" || maybe.error?.code === "model_not_found";
+}
+
+function normalizeOpenRouterModel(model: string): string {
+  if (model === "google/gemma-4-31b") return "google/gemma-4-31b-it";
+  if (model === "google/gemma-4-26b") return "google/gemma-4-26b-a4b-it";
+  return model;
+}
+
+function summarizeLlmError(error: unknown): string {
+  if (!error) return "unknown error";
+  if (typeof error === "string") return error;
+  if (error instanceof Error) {
+    const maybe = error as Error & {
+      status?: number;
+      code?: string;
+      error?: { message?: string; code?: string; type?: string };
+    };
+    const parts = [
+      maybe.status ? `status=${maybe.status}` : "",
+      maybe.code ? `code=${maybe.code}` : "",
+      maybe.error?.code ? `api_code=${maybe.error.code}` : "",
+      maybe.error?.type ? `type=${maybe.error.type}` : "",
+      maybe.error?.message || maybe.message
+    ].filter(Boolean);
+    return parts.join(" | ");
+  }
+
+  if (typeof error === "object") {
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return "non-serializable error object";
+    }
+  }
+
+  return String(error);
+}
+
+function compactDetail(input: string, max = 120): string {
+  const normalized = input.replace(/\s+/g, " ").trim();
+  if (normalized.length <= max) return normalized;
+  return `${normalized.slice(0, max - 3)}...`;
 }

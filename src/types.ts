@@ -33,6 +33,37 @@ export interface JobSearchQuery {
   maxResults?: number;
 }
 
+export interface DiscoveryFinding {
+  stage: "source" | "filter" | "result";
+  severity: "info" | "warning" | "error";
+  code: string;
+  message: string;
+  meta?: Record<string, unknown>;
+}
+
+export interface DiscoveryDiagnostics {
+  counts: {
+    apiJobs: number;
+    indianJobs: number;
+    htmlJobs: number;
+    browserJobs: number;
+    mergedJobs: number;
+    actionableJobs: number;
+    skillAlignedJobs: number;
+    candidateJobs: number;
+    experienceAlignedJobs: number;
+    prioritizedJobs: number;
+  };
+  findings: DiscoveryFinding[];
+}
+
+export interface DiscoveryRunResult {
+  total: number;
+  applyCount: number;
+  jobs: ScoredJob[];
+  diagnostics: DiscoveryDiagnostics;
+}
+
 export interface JobPosting {
   source: string;
   externalId: string;
