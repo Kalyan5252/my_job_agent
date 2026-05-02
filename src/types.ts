@@ -4,6 +4,7 @@ export interface JobProfile {
   role: string;
   skills: string[];
   experience: ExperienceLevel | string;
+  computedExperienceYears?: number;
 }
 
 export interface JobSearchFilters {
@@ -28,6 +29,7 @@ export interface JobSearchQuery {
   role: string;
   location?: string;
   skills?: string[];
+  computedExperienceYears?: number;
   filters?: JobSearchFilters;
   priority?: JobSearchPriority;
   maxResults?: number;

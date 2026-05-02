@@ -36,11 +36,84 @@ body:json {
     "experience": "junior",
     "country": "India",
     "locations": ["Hyderabad", "Bengaluru", "Pune", "Chennai"],
+    "remoteOnly": false,
     "minExperienceYears": 0,
     "maxExperienceYears": 2,
     "companyTierOrder": ["top", "mid", "other"],
     "highPayFirst": true,
     "minSalaryLpa": 10,
     "maxResults": 40
+  }
+}
+
+example {
+  name: United States Discovery
+  
+  request: {
+    url: {{baseUrl}}/workflows/discovery/run
+    method: POST
+    mode: json
+    headers: {
+      Content-Type: application/json
+      Accept: application/json
+    }
+  
+    body:json: {
+      {
+        "role": "Backend Engineer",
+        "skills": ["TypeScript", "Node.js", "PostgreSQL", "AWS"],
+        "country": "United States",
+        "remoteOnly": false,
+        "maxResults": 40
+      }
+    }
+  }
+}
+
+example {
+  name: United States Remote Discovery
+  
+  request: {
+    url: {{baseUrl}}/workflows/discovery/run
+    method: POST
+    mode: json
+    headers: {
+      Content-Type: application/json
+      Accept: application/json
+    }
+  
+    body:json: {
+      {
+        "role": "Backend Engineer",
+        "skills": ["TypeScript", "Node.js", "PostgreSQL", "AWS"],
+        "country": "United States",
+        "remoteOnly": true,
+        "maxResults": 40
+      }
+    }
+  }
+}
+
+example {
+  name: Global Remote Discovery
+  
+  request: {
+    url: {{baseUrl}}/workflows/discovery/run
+    method: POST
+    mode: json
+    headers: {
+      Content-Type: application/json
+      Accept: application/json
+    }
+  
+    body:json: {
+      {
+        "role": "Backend Engineer",
+        "skills": ["TypeScript", "Node.js", "PostgreSQL", "AWS"],
+        "locations": ["Remote"],
+        "remoteOnly": true,
+        "maxResults": 40
+      }
+    }
   }
 }
