@@ -55,6 +55,8 @@ const EnvSchema = z.object({
     .default(false),
   AI_SCRAPER_PROVIDER: z.enum(['openai', 'openrouter']).default('openai'),
   SCRAPER_ALLOW_SYNTHETIC_FALLBACK: BoolFromEnv.default(false),
+  SCRAPER_DEFAULT_COUNTRY: z.string().default('India'),
+  SCRAPER_REMOTE_BOOST: BoolFromEnv.default(false),
   INDIAN_JOB_SOURCES_ENABLED: BoolFromEnv.default(true),
   ADZUNA_APP_ID: z.string().optional(),
   ADZUNA_APP_KEY: z.string().optional(),

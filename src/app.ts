@@ -21,6 +21,7 @@ interface DiscoveryRequestBody extends Partial<JobProfile> {
   location?: string;
   locations?: string[];
   country?: string;
+  remoteOnly?: boolean;
   minSalaryLpa?: number;
   minExperienceYears?: number;
   maxExperienceYears?: number;
@@ -97,6 +98,7 @@ export function createApp() {
     });
     return {
       profile,
+      computedExperienceYears: profile.computedExperienceYears,
       resumeFilePath: resume.getResumeFilePath(),
       resumeTextLoaded: Boolean(resume.getResumeText().trim().length),
       secondaryIdentity: {
@@ -204,6 +206,7 @@ function toSearchQuery(body: DiscoveryRequestBody, profile: JobProfile): Partial
     location: body.location,
     maxResults: body.maxResults,
     filters: {
+      remoteOnly: body.remoteOnly,
       country: body.country,
       locations: body.locations,
       minSalaryLpa: body.minSalaryLpa,

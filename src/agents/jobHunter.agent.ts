@@ -3,6 +3,7 @@ import { enqueueApplication } from '../queues/apply.queue';
 import { env } from '../config/env';
 import { LLMService } from '../services/llm.service';
 import { OpenRouterRateLimitError, isOpenRouterRateLimitError } from '../services/llm.service';
+import { ResumeService } from '../services/resume.service';
 import { ScoringService } from '../services/scoring.service';
 import { ScraperTool } from '../tools/scraper.tool';
 import { DiscoveryDiagnostics, JobPosting, JobProfile, JobSearchQuery, ScoredJob } from '../types';
@@ -10,21 +11,24 @@ import { DiscoveryDiagnostics, JobPosting, JobProfile, JobSearchQuery, ScoredJob
 export class JobHunterAgent {
   private readonly scraper = new ScraperTool();
   private readonly llm = new LLMService();
+  private readonly resumeService = new ResumeService();
   private readonly scoring = new ScoringService(this.llm);
 
   async run(
     profile: JobProfile,
     searchQuery?: Partial<JobSearchQuery>,
   ): Promise<{ jobs: ScoredJob[]; diagnostics: DiscoveryDiagnostics }> {
+    const hydratedProfile = this.resumeService.hydrateProfile(profile);
     const jobs = await this.scraper.fetchJobs({
-      role: searchQuery?.role || profile.role,
-      skills: searchQuery?.skills || profile.skills,
+      role: searchQuery?.role || hydratedProfile.role,
+      skills: searchQuery?.skills || hydratedProfile.skills,
+      computedExperienceYears: hydratedProfile.computedExperienceYears,
       location: searchQuery?.location,
       filters: searchQuery?.filters,
       priority: searchQuery?.priority,
       maxResults: searchQuery?.maxResults,
     });
-    const scored = await this.scoreJobs(profile, jobs);
+    const scored = await this.scoreJobs(hydratedProfile, jobs);
 
     const coll = await jobsCollection();
     if (scored.length > 0) {
@@ -33,7 +37,7 @@ export class JobHunterAgent {
 
     const eligible = scored.filter((job) => job.apply);
     for (const job of eligible) {
-      await enqueueApplication({ job, profile });
+      await enqueueApplication({ job, profile: hydratedProfile });
     }
 
     return {
