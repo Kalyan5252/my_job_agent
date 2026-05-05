@@ -1,0 +1,116 @@
+/workflows/discovery/run:
+  post:
+    tags:
+      - Discovery
+    summary: Run job discovery
+    description: >
+      Discovers jobs using country-aware sources, computed experience filters,
+      and remote-work intelligence. Request values override environment defaults.
+    operationId: runDiscovery
+    parameters:
+      - $ref: ../components/headers.yaml#/ContentTypeJson
+      - $ref: ../components/headers.yaml#/AcceptJson
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas.yaml#/DiscoveryRequest
+          examples:
+            indiaLocal:
+              summary: India local search
+              value:
+                role: Backend Engineer
+                skills:
+                  - TypeScript
+                  - Node.js
+                  - PostgreSQL
+                  - AWS
+                country: India
+                locations:
+                  - Hyderabad
+                  - Bengaluru
+                remoteOnly: false
+                maxResults: 40
+            usCountry:
+              summary: United States country search
+              value:
+                role: Backend Engineer
+                skills:
+                  - TypeScript
+                  - Node.js
+                  - PostgreSQL
+                  - AWS
+                country: United States
+                remoteOnly: false
+                maxResults: 20
+            usRemote:
+              summary: United States remote search
+              value:
+                role: Backend Engineer
+                skills:
+                  - TypeScript
+                  - Node.js
+                  - PostgreSQL
+                  - AWS
+                country: United States
+                remoteOnly: true
+                maxResults: 20
+            globalRemote:
+              summary: Global remote search
+              value:
+                role: Backend Engineer
+                locations:
+                  - Remote
+                remoteOnly: true
+                maxResults: 20
+    responses:
+      "200":
+        description: Discovery completed
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/DiscoveryRunResult
+      "400":
+        $ref: ../components/errors.yaml#/BadRequest
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized
+      "404":
+        $ref: ../components/errors.yaml#/NotFound
+      "500":
+        $ref: ../components/errors.yaml#/InternalServerError
+
+/workflows/discovery/understand:
+  post:
+    tags:
+      - Discovery
+    summary: Run discovery and return explainable results
+    description: >
+      Runs the same discovery workflow as /workflows/discovery/run, then expands
+      results into UI-friendly job summaries, requirement highlights, FAQs, and
+      summarized diagnostics.
+    operationId: understandDiscovery
+    parameters:
+      - $ref: ../components/headers.yaml#/ContentTypeJson
+      - $ref: ../components/headers.yaml#/AcceptJson
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas.yaml#/DiscoveryRequest
+    responses:
+      "200":
+        description: Discovery explanation completed
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/DiscoveryUnderstandResult
+      "400":
+        $ref: ../components/errors.yaml#/BadRequest
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized
+      "404":
+        $ref: ../components/errors.yaml#/NotFound
+      "500":
+        $ref: ../components/errors.yaml#/InternalServerError

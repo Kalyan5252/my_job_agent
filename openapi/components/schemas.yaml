@@ -1,0 +1,605 @@
+ErrorResponse:
+  type: object
+  required:
+    - statusCode
+    - error
+    - message
+  properties:
+    statusCode:
+      type: integer
+      enum:
+        - 400
+        - 401
+        - 404
+        - 500
+    error:
+      type: string
+    message:
+      type: string
+
+JobProfile:
+  type: object
+  required:
+    - role
+    - skills
+    - experience
+  properties:
+    role:
+      type: string
+    skills:
+      type: array
+      items:
+        type: string
+    experience:
+      oneOf:
+        - type: string
+          enum:
+            - fresher
+            - junior
+            - mid
+            - senior
+        - type: string
+    computedExperienceYears:
+      type: number
+      minimum: 0
+      description: Computed from candidate profile data when available.
+
+DiscoveryRequest:
+  type: object
+  additionalProperties: false
+  description: >
+    Request body for discovery. All fields are optional. Request values override
+    environment defaults and profile-derived values.
+  properties:
+    role:
+      type: string
+      default: Backend Engineer
+      description: Defaults to DEFAULT_JOB_ROLE.
+    skills:
+      type: array
+      items:
+        type: string
+      description: Defaults to DEFAULT_JOB_SKILLS split by comma.
+    experience:
+      oneOf:
+        - type: string
+          enum:
+            - fresher
+            - junior
+            - mid
+            - senior
+        - type: string
+      default: fresher
+      description: Defaults to DEFAULT_JOB_EXPERIENCE and is used when computed profile experience is unavailable.
+    location:
+      type: string
+      description: Optional single preferred location.
+    locations:
+      type: array
+      items:
+        type: string
+      description: >
+        Preferred locations. If omitted, locations are derived from country and
+        SCRAPER_DEFAULT_COUNTRY.
+    country:
+      type: string
+      default: India
+      description: >
+        Overrides SCRAPER_DEFAULT_COUNTRY. Used to select country-capable sources
+        and country/location filtering.
+    remoteOnly:
+      type: boolean
+      default: false
+      description: >
+        When true, remote boards are prioritized and country remote searches
+        include country-restricted plus worldwide remote roles.
+    minSalaryLpa:
+      type: number
+      minimum: 0
+      description: Optional minimum salary in LPA.
+    minExperienceYears:
+      type: number
+      minimum: 0
+      description: Overrides computed minimum experience filter.
+    maxExperienceYears:
+      type: number
+      minimum: 0
+      description: Overrides computed maximum experience filter.
+    maxResults:
+      type: integer
+      minimum: 1
+      default: 50
+    companyTierOrder:
+      type: array
+      items:
+        type: string
+        enum:
+          - top
+          - mid
+          - other
+      default:
+        - top
+        - mid
+        - other
+    highPayFirst:
+      type: boolean
+      default: true
+
+JobPosting:
+  type: object
+  required:
+    - source
+    - externalId
+    - title
+    - company
+    - description
+  properties:
+    source:
+      type: string
+    externalId:
+      type: string
+    title:
+      type: string
+    company:
+      type: string
+    companyTier:
+      type: string
+      enum:
+        - top
+        - mid
+        - other
+    salaryLpa:
+      type: number
+    location:
+      type: string
+    description:
+      type: string
+    requirements:
+      type: array
+      items:
+        type: string
+    applyUrl:
+      type: string
+      format: uri
+    rawData:
+      nullable: true
+      description: Provider-specific raw payload.
+
+ScoredJob:
+  allOf:
+    - $ref: "#/JobPosting"
+    - type: object
+      required:
+        - score
+        - apply
+      properties:
+        score:
+          type: number
+          minimum: 0
+          maximum: 100
+        apply:
+          type: boolean
+        reasoning:
+          type: string
+
+DiscoveryRunResult:
+  type: object
+  required:
+    - total
+    - applyCount
+    - jobs
+    - diagnostics
+  properties:
+    total:
+      type: integer
+    applyCount:
+      type: integer
+    jobs:
+      type: array
+      items:
+        $ref: "#/ScoredJob"
+    diagnostics:
+      $ref: "#/DiscoveryDiagnostics"
+
+DiscoveryDiagnostics:
+  type: object
+  required:
+    - counts
+    - findings
+  properties:
+    counts:
+      type: object
+      required:
+        - apiJobs
+        - indianJobs
+        - htmlJobs
+        - browserJobs
+        - mergedJobs
+        - actionableJobs
+        - skillAlignedJobs
+        - candidateJobs
+        - experienceAlignedJobs
+        - prioritizedJobs
+      properties:
+        apiJobs:
+          type: integer
+        indianJobs:
+          type: integer
+          description: Legacy count field currently used for country-source jobs.
+        htmlJobs:
+          type: integer
+        browserJobs:
+          type: integer
+        mergedJobs:
+          type: integer
+        actionableJobs:
+          type: integer
+        skillAlignedJobs:
+          type: integer
+        candidateJobs:
+          type: integer
+        experienceAlignedJobs:
+          type: integer
+        prioritizedJobs:
+          type: integer
+    findings:
+      type: array
+      items:
+        $ref: "#/DiscoveryFinding"
+
+DiscoveryFinding:
+  type: object
+  required:
+    - stage
+    - severity
+    - code
+    - message
+  properties:
+    stage:
+      type: string
+      enum:
+        - source
+        - filter
+        - result
+    severity:
+      type: string
+      enum:
+        - info
+        - warning
+        - error
+    code:
+      type: string
+      examples:
+        - SOURCE_BREAKDOWN
+        - REMOTE_FALLBACK_USED
+        - LOCATION_FILTER_DROPPED
+        - LOCATION_FILTER_FALLBACK_USED
+        - LINKEDIN_ZERO_RESULTS
+        - EXPERIENCE_FILTER_EMPTY
+        - PRIORITIZATION_EMPTY
+    message:
+      type: string
+    meta:
+      type: object
+      additionalProperties: true
+
+DiscoveryUnderstandResult:
+  type: object
+  required:
+    - sourceEndpoint
+    - executedAt
+    - totals
+    - diagnostics
+    - findings
+    - topRequirementSummary
+    - jobs
+  properties:
+    sourceEndpoint:
+      type: string
+    executedAt:
+      type: string
+      format: date-time
+    totals:
+      type: object
+      required:
+        - fetched
+        - applyRecommended
+      properties:
+        fetched:
+          type: integer
+        applyRecommended:
+          type: integer
+    diagnostics:
+      $ref: "#/DiscoveryDiagnostics"
+    findings:
+      type: array
+      items:
+        $ref: "#/DiscoveryFinding"
+    topRequirementSummary:
+      type: array
+      items:
+        type: object
+        required:
+          - requirement
+          - count
+        properties:
+          requirement:
+            type: string
+          count:
+            type: integer
+    jobs:
+      type: array
+      items:
+        $ref: "#/DetailedDiscoveryJob"
+
+DetailedDiscoveryJob:
+  allOf:
+    - $ref: "#/ScoredJob"
+    - type: object
+      required:
+        - id
+        - location
+        - application
+        - requirementHighlights
+        - faqs
+      properties:
+        id:
+          type: string
+        applicationUrl:
+          type: string
+          format: uri
+        application:
+          type: object
+          required:
+            - hasUrl
+          properties:
+            hasUrl:
+              type: boolean
+            url:
+              type: string
+              format: uri
+        requirementHighlights:
+          type: array
+          items:
+            type: string
+        faqs:
+          type: array
+          items:
+            type: object
+            required:
+              - question
+              - answer
+            properties:
+              question:
+                type: string
+              answer:
+                type: string
+
+CandidateProfileResponse:
+  type: object
+  required:
+    - profile
+    - computedExperienceYears
+    - resumeFilePath
+    - resumeTextLoaded
+    - secondaryIdentity
+    - manualProfileAvailable
+  properties:
+    profile:
+      $ref: "#/JobProfile"
+    computedExperienceYears:
+      type: number
+      nullable: true
+    resumeFilePath:
+      type: string
+    resumeTextLoaded:
+      type: boolean
+    secondaryIdentity:
+      type: object
+      required:
+        - email
+        - resumeFilePath
+        - resumeAvailable
+        - profileAvailable
+      properties:
+        email:
+          type: string
+        resumeFilePath:
+          type: string
+        resumeAvailable:
+          type: boolean
+        profileAvailable:
+          type: boolean
+    manualProfileAvailable:
+      type: boolean
+
+AuthStatusResponse:
+  type: object
+  required:
+    - enabled
+    - storageStatePath
+    - sessionFound
+  properties:
+    enabled:
+      type: boolean
+    storageStatePath:
+      type: string
+    sessionFound:
+      type: boolean
+
+GoogleAuthStatusResponse:
+  allOf:
+    - $ref: "#/AuthStatusResponse"
+    - type: object
+      required:
+        - probeStatus
+      properties:
+        probeStatus:
+          type: string
+          enum:
+            - ok
+            - expired
+            - missing_auth
+
+ApplicationRunRequest:
+  type: object
+  required:
+    - job
+  properties:
+    job:
+      allOf:
+        - $ref: "#/ScoredJob"
+        - type: object
+          properties:
+            id:
+              type: string
+            applicationUrl:
+              type: string
+              format: uri
+            application:
+              type: object
+              properties:
+                url:
+                  type: string
+                  format: uri
+      description: job.applyUrl, job.applicationUrl, or job.application.url is required.
+    profile:
+      $ref: "#/JobProfile"
+    options:
+      $ref: "#/ApplicationRunOptions"
+
+ApplicationRunOptions:
+  type: object
+  properties:
+    mode:
+      type: string
+      enum:
+        - dry-run
+        - submit
+      default: dry-run
+    preview:
+      type: boolean
+    authMode:
+      type: string
+      enum:
+        - auto
+        - google
+        - linkedin
+      default: auto
+    captchaHandoff:
+      type: boolean
+    captchaHandoffTimeoutMs:
+      type: integer
+    keepBrowserOpenAfterSubmit:
+      type: boolean
+    keepBrowserOpenMs:
+      type: integer
+
+ApplicationRunResponse:
+  type: object
+  required:
+    - success
+    - mode
+    - result
+  properties:
+    success:
+      type: boolean
+    mode:
+      type: string
+      enum:
+        - dry-run
+        - submit
+    result:
+      $ref: "#/ApplicationRunResult"
+
+ApplicationRunResult:
+  type: object
+  required:
+    - status
+    - message
+    - stage
+  properties:
+    status:
+      type: string
+      enum:
+        - queued
+        - in_progress
+        - draft_filled
+        - needs_human
+        - applied
+        - rejected
+        - interview
+        - failed
+        - unknown
+    message:
+      type: string
+    errorCode:
+      type: string
+      enum:
+        - LINKEDIN_AUTH_NOT_CONFIGURED
+        - LINKEDIN_SESSION_EXPIRED
+        - GOOGLE_AUTH_NOT_CONFIGURED
+        - GOOGLE_SESSION_EXPIRED
+        - GOOGLE_AUTH_REQUIRED
+        - CAPTCHA_BLOCKED
+        - LINKEDIN_MODAL_NOT_OPENED
+        - EXTERNAL_APPLY_REDIRECT
+        - NO_FORM_FIELDS
+        - FORM_VALIDATION_FAILED
+        - SUBMIT_NOT_CONFIRMED
+        - UNKNOWN
+    stage:
+      type: string
+      enum:
+        - precheck
+        - extract
+        - map
+        - validate
+        - fill
+        - submit
+        - done
+    filledCount:
+      type: integer
+    requiredFieldCount:
+      type: integer
+    missingRequiredFields:
+      type: array
+      items:
+        type: string
+    missingSelectors:
+      type: array
+      items:
+        type: string
+    applyUrl:
+      type: string
+      format: uri
+    targetUrl:
+      type: string
+      format: uri
+    previewScreenshots:
+      type: array
+      items:
+        type: string
+
+TrackingRunResponse:
+  type: object
+  required:
+    - updates
+  properties:
+    updates:
+      type: integer
+
+HealthResponse:
+  type: object
+  required:
+    - ok
+    - service
+    - at
+  properties:
+    ok:
+      type: boolean
+    service:
+      type: string
+    at:
+      type: string
+      format: date-time

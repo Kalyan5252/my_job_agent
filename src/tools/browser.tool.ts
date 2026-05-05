@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { chromium, type BrowserContextOptions, type Locator, type Page } from 'playwright';
+import { chromium,firefox, type BrowserContextOptions, type Locator, type Page } from 'playwright';
 import { env } from '../config/env';
 import { FieldAnswer, FormField } from '../types';
 
@@ -69,10 +69,24 @@ export class BrowserTool {
   ): Promise<T> {
     const preview = options.preview ?? false;
     const requiresInteractiveBrowser = preview || Boolean(options.captchaHandoff);
-    const browser = await chromium.launch({
+    let browser;
+    try{
+     browser = await chromium.launch({
       headless: requiresInteractiveBrowser ? false : (options.headless ?? true),
       slowMo: preview ? 120 : 0,
     });
+  }
+  catch (error) {
+    try {
+      console.warn('Chromium launch failed, falling back to Firefox. Original error:', error);
+      browser = await firefox.launch({
+        headless: requiresInteractiveBrowser ? false : (options.headless ?? true),
+        slowMo: preview ? 120 : 0,
+      });
+    } catch(error){
+      throw new Error(`Failed to launch both Chromium and Firefox browsers. Original error: ${error}`);
+    }
+  }
     const context = await browser.newContext(this.resolveContextOptions(url, options));
     const page = await context.newPage();
 

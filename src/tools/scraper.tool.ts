@@ -1,4 +1,4 @@
-import { chromium } from 'playwright';
+import { chromium ,firefox} from 'playwright';
 import {
   CompanyTier,
   DiscoveryDiagnostics,
@@ -1151,7 +1151,6 @@ export class ScraperTool {
 
       try {
         this.log('Attempting native Firefox launch...');
-        const { firefox } = require('playwright');
         return await firefox.launch({ headless: true });
       } catch (fallbackError) {
         this.log(

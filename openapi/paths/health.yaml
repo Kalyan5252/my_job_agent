@@ -1,0 +1,23 @@
+/health:
+  get:
+    tags:
+      - Health
+    summary: Get service health
+    operationId: getHealth
+    parameters:
+      - $ref: ../components/headers.yaml#/AcceptJson
+    responses:
+      "200":
+        description: Service health response
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/HealthResponse
+      "400":
+        $ref: ../components/errors.yaml#/BadRequest
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized
+      "404":
+        $ref: ../components/errors.yaml#/NotFound
+      "500":
+        $ref: ../components/errors.yaml#/InternalServerError

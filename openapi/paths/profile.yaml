@@ -1,0 +1,23 @@
+/profile/candidate:
+  get:
+    tags:
+      - Profile
+    summary: Get hydrated candidate profile
+    operationId: getCandidateProfile
+    parameters:
+      - $ref: ../components/headers.yaml#/AcceptJson
+    responses:
+      "200":
+        description: Candidate profile and resume metadata
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/CandidateProfileResponse
+      "400":
+        $ref: ../components/errors.yaml#/BadRequest
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized
+      "404":
+        $ref: ../components/errors.yaml#/NotFound
+      "500":
+        $ref: ../components/errors.yaml#/InternalServerError
