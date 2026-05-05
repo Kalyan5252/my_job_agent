@@ -1,4 +1,7 @@
 import Fastify from 'fastify';
+import cors from '@fastify/cors';
+import swagger from '@fastify/swagger';
+import swaggerUi from '@fastify/swagger-ui';
 import fs from 'node:fs';
 import path from 'node:path';
 import { env } from './config/env';
@@ -73,6 +76,37 @@ export function createApp() {
   const apply = new ApplyWorkflow();
   const browser = new BrowserTool();
   const resume = new ResumeService();
+  const openApiRoot = path.resolve(process.cwd(), 'openapi');
+  app.register(cors, {
+    origin: '*', 
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  });
+
+  app.register(swagger, {
+    mode: 'static',
+    specification: {
+      path: path.join(openApiRoot, 'index.yaml'),
+      baseDir: openApiRoot,
+    },
+  });
+  app.register(swaggerUi, {
+    routePrefix: '/api-docs',
+    uiConfig: {
+      docExpansion: 'list',
+      deepLinking: true,
+    },
+    staticCSP: true,
+  });
+
+  app.get('/docs', async (_request, reply) => reply.redirect('/api-docs'));
+  app.get('/api-docs/paths/*', async (request, reply) => {
+    const rawPath = `paths/${(request.params as { '*': string })['*'] || ''}`;
+    return sendOpenApiYaml(reply, openApiRoot, rawPath);
+  });
+  app.get('/api-docs/components/*', async (request, reply) => {
+    const rawPath = `components/${(request.params as { '*': string })['*'] || ''}`;
+    return sendOpenApiYaml(reply, openApiRoot, rawPath);
+  });
 
   app.get('/health', async () => ({
     ok: true,
@@ -189,6 +223,27 @@ export function createApp() {
 
 function resolvePath(input: string): string {
   return path.isAbsolute(input) ? input : path.resolve(process.cwd(), input);
+}
+
+function sendOpenApiYaml(
+  reply: import('fastify').FastifyReply,
+  openApiRoot: string,
+  rawPath: string,
+): unknown {
+  const requestedPath = path.resolve(openApiRoot, rawPath);
+  const relative = path.relative(openApiRoot, requestedPath);
+  const isInsideRoot = Boolean(relative) && !relative.startsWith('..') && !path.isAbsolute(relative);
+  const allowedFile = requestedPath.endsWith('.yaml');
+
+  if (!isInsideRoot || !allowedFile || !fs.existsSync(requestedPath)) {
+    return reply.code(404).send({
+      statusCode: 404,
+      error: 'Not Found',
+      message: 'OpenAPI file not found',
+    });
+  }
+
+  return reply.type('application/yaml').send(fs.readFileSync(requestedPath, 'utf8'));
 }
 
 function toProfile(body: DiscoveryRequestBody): JobProfile {

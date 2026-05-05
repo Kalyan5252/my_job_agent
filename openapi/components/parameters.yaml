@@ -1,0 +1,9 @@
+MaxResults:
+  name: maxResults
+  in: query
+  required: false
+  schema:
+    type: integer
+    minimum: 1
+    default: 50
+  description: Optional maximum number of records to return when supported by a route.
