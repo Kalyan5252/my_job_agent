@@ -1,0 +1,18 @@
+ContentTypeJson:
+  name: Content-Type
+  in: header
+  required: true
+  schema:
+    type: string
+    enum:
+      - application/json
+  description: Request body media type.
+
+AcceptJson:
+  name: Accept
+  in: header
+  required: false
+  schema:
+    type: string
+    default: application/json
+  description: Preferred response media type.

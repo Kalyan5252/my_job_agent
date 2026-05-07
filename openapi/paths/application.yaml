@@ -1,0 +1,30 @@
+/workflows/application/run:
+  post:
+    tags:
+      - Application
+    summary: Run application fill or submit workflow
+    operationId: runApplication
+    parameters:
+      - $ref: ../components/headers.yaml#/ContentTypeJson
+      - $ref: ../components/headers.yaml#/AcceptJson
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas.yaml#/ApplicationRunRequest
+    responses:
+      "200":
+        description: Application workflow completed or needs human intervention
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/ApplicationRunResponse
+      "400":
+        $ref: ../components/errors.yaml#/BadRequest
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized
+      "404":
+        $ref: ../components/errors.yaml#/NotFound
+      "500":
+        $ref: ../components/errors.yaml#/InternalServerError

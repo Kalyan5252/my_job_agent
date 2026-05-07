@@ -24,6 +24,9 @@ interface CandidateProfile {
   skills?: string[];
   educationHighlights?: string[];
   experienceHighlights?: string[];
+  workHistory?: WorkHistoryItem[];
+  employmentHistory?: WorkHistoryItem[];
+  experience?: WorkHistoryItem[];
   resumeFilePath?: string;
   noticePeriodDays?: number;
   canJoinImmediately?: boolean;
@@ -32,6 +35,15 @@ interface CandidateProfile {
   currentSalaryLpa?: string;
   expectedSalaryLpa?: number;
   skillYears?: Record<string, number>;
+}
+
+interface WorkHistoryItem {
+  start?: string;
+  end?: string;
+  startDate?: string;
+  endDate?: string;
+  from?: string;
+  to?: string;
 }
 
 export class ResumeService {
@@ -65,6 +77,8 @@ export class ResumeService {
       role: input.role || 'Backend Engineer',
       skills: Array.from(mergedSkills),
       experience: input.experience || 'junior',
+      computedExperienceYears:
+        input.computedExperienceYears ?? this.computeExperienceYears(candidate),
     };
   }
 
@@ -119,6 +133,10 @@ export class ResumeService {
 
     const configured = this.resolvePath(env.RESUME_FILE_PATH);
     return configured;
+  }
+
+  getComputedExperienceYears(): number | undefined {
+    return this.computeExperienceYears(this.getCandidateProfile());
   }
 
   private getCandidateProfile(): CandidateProfile {
@@ -266,6 +284,94 @@ export class ResumeService {
     if (v.startsWith('http://') || v.startsWith('https://')) return v;
     if (v.includes('.')) return `https://${v}`;
     return `${prefix}${v}`;
+  }
+
+  private computeExperienceYears(candidate: CandidateProfile): number | undefined {
+    const structured = this.computeStructuredWorkYears(candidate);
+    if (structured !== undefined) return structured;
+
+    const highlightYears = this.computeExperienceHighlightYears(candidate.experienceHighlights);
+    if (highlightYears !== undefined) return highlightYears;
+
+    const skillYears = Object.values(candidate.skillYears || {})
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value) && value >= 0)
+      .sort((a, b) => b - a);
+    if (skillYears.length === 0) return undefined;
+
+    const top = skillYears.slice(0, Math.min(5, skillYears.length));
+    const avg = top.reduce((sum, value) => sum + value, 0) / top.length;
+    return this.roundYears(Math.max(skillYears[0], avg));
+  }
+
+  private computeStructuredWorkYears(candidate: CandidateProfile): number | undefined {
+    const items = [
+      ...(candidate.workHistory || []),
+      ...(candidate.employmentHistory || []),
+      ...(Array.isArray(candidate.experience) ? candidate.experience : []),
+    ];
+    if (items.length === 0) return undefined;
+
+    let totalMonths = 0;
+    for (const item of items) {
+      const start = this.parseProfileDate(item.startDate || item.start || item.from);
+      const end = this.parseProfileDate(item.endDate || item.end || item.to) || new Date();
+      if (!start || end < start) continue;
+      totalMonths += this.monthDiff(start, end);
+    }
+
+    return totalMonths > 0 ? this.roundYears(totalMonths / 12) : undefined;
+  }
+
+  private computeExperienceHighlightYears(highlights: string[] | undefined): number | undefined {
+    const text = (highlights || []).join(' ');
+    if (!text.trim()) return undefined;
+
+    const patterns = [
+      /([A-Z][a-z]{2,8}\s+\d{4})\s*(?:-|–|—|to)\s*(present|current|now|[A-Z][a-z]{2,8}\s+\d{4})/gi,
+      /(\d{4})\s*(?:-|–|—|to)\s*(present|current|now|\d{4})/gi,
+    ];
+
+    let totalMonths = 0;
+    for (const pattern of patterns) {
+      let match: RegExpExecArray | null;
+      while ((match = pattern.exec(text))) {
+        const start = this.parseProfileDate(match[1]);
+        const end = this.parseProfileDate(match[2]) || new Date();
+        if (!start || end < start) continue;
+        totalMonths += this.monthDiff(start, end);
+      }
+    }
+
+    return totalMonths > 0 ? this.roundYears(totalMonths / 12) : undefined;
+  }
+
+  private parseProfileDate(value: string | undefined): Date | null {
+    const raw = (value || '').trim();
+    if (!raw) return null;
+    if (/^(present|current|now)$/i.test(raw)) return new Date();
+
+    const monthYear = raw.match(/^([A-Za-z]{3,9})\s+(\d{4})$/);
+    if (monthYear) {
+      const parsed = Date.parse(`${monthYear[1]} 1, ${monthYear[2]}`);
+      return Number.isNaN(parsed) ? null : new Date(parsed);
+    }
+
+    const year = raw.match(/^\d{4}$/);
+    if (year) return new Date(Number(raw), 0, 1);
+
+    const parsed = Date.parse(raw);
+    return Number.isNaN(parsed) ? null : new Date(parsed);
+  }
+
+  private monthDiff(start: Date, end: Date): number {
+    const months =
+      (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+    return Math.max(0, months + 1);
+  }
+
+  private roundYears(value: number): number {
+    return Math.round(Math.max(0, value) * 10) / 10;
   }
 
   private resolvePath(p: string): string {

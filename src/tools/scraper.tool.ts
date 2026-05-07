@@ -1,4 +1,4 @@
-import { chromium } from 'playwright';
+import { chromium ,firefox} from 'playwright';
 import {
   CompanyTier,
   DiscoveryDiagnostics,
@@ -15,32 +15,55 @@ interface NormalizedJob extends Omit<JobPosting, 'location'> {
   strategy: 'api' | 'html' | 'browser';
 }
 
+type LocationMatchClass =
+  | 'location_match'
+  | 'country_match'
+  | 'remote_country_match'
+  | 'remote_global'
+  | 'no_match';
+
 export class ScraperTool {
   private readonly aiScraper = new AiScraperService();
   private lastDiagnostics: DiscoveryDiagnostics = this.emptyDiagnostics();
 
   async fetchJobs(input: JobProfile | JobSearchQuery): Promise<JobPosting[]> {
     const query = this.normalizeQuery(input);
-    this.log(`Starting scrape: role="${query.role}", location="${query.location || 'any'}"`);
+    const remoteMode = this.isRemoteQuery(query);
+    this.log(
+      `Starting scrape: role="${query.role}", location="${query.location || 'any'}", country="${query.filters?.country || 'any'}", remote=${remoteMode}`,
+    );
     const findings: DiscoveryFinding[] = [];
 
-    const apiJobs = await this.fetchFromApis(query);
-    this.log(`API strategy returned ${apiJobs.length} jobs`);
+    const countryJobs = await this.fetchFromCountrySources(query);
+    this.log(`Country-source strategy returned ${countryJobs.length} jobs`);
 
-    const indianJobs = await this.fetchFromIndianSources(query);
-    this.log(`Indian-source strategy returned ${indianJobs.length} jobs`);
+    const shouldFetchRemoteFallback = remoteMode || countryJobs.length < 8;
+    const apiJobs = shouldFetchRemoteFallback ? await this.fetchFromApis(query) : [];
+    this.log(`Remote/global API strategy returned ${apiJobs.length} jobs`);
+    if (!remoteMode && countryJobs.length < 8) {
+      findings.push({
+        stage: 'source',
+        severity: 'warning',
+        code: 'REMOTE_FALLBACK_USED',
+        message: 'Country-specific sources returned too few jobs; remote/global sources were used as fallback.',
+        meta: { countryJobs: countryJobs.length },
+      });
+    }
 
-    const htmlJobs = await this.fetchFromHtml(query);
+    const htmlJobs =
+      remoteMode || countryJobs.length + apiJobs.length < 8 ? await this.fetchFromHtml(query) : [];
     this.log(`HTML strategy returned ${htmlJobs.length} jobs`);
 
     // Playwright fallback is triggered when simpler strategies return too few jobs.
     const browserJobs =
-      apiJobs.length + htmlJobs.length < 8 ? await this.fetchFromBrowser(query) : [];
+      countryJobs.length + apiJobs.length + htmlJobs.length < 8
+        ? await this.fetchFromBrowser(query)
+        : [];
     if (browserJobs.length > 0) this.log(`Browser strategy returned ${browserJobs.length} jobs`);
 
     const counts = {
       apiJobs: apiJobs.length,
-      indianJobs: indianJobs.length,
+      indianJobs: countryJobs.length,
       htmlJobs: htmlJobs.length,
       browserJobs: browserJobs.length,
       mergedJobs: 0,
@@ -51,7 +74,7 @@ export class ScraperTool {
       prioritizedJobs: 0,
     };
 
-    const merged = this.dedupeJobs([...apiJobs, ...indianJobs, ...htmlJobs, ...browserJobs]);
+    const merged = this.dedupeJobs([...countryJobs, ...apiJobs, ...htmlJobs, ...browserJobs]);
     counts.mergedJobs = merged.length;
     const sourceBreakdown = this.sourceBreakdown(merged);
     findings.push({
@@ -137,6 +160,29 @@ export class ScraperTool {
       return [];
     }
 
+    const locationEligibleCount = this.countLocationEligibleJobs(experienceAligned, query);
+    if (locationEligibleCount === 0) {
+      findings.push({
+        stage: 'filter',
+        severity: 'warning',
+        code: 'LOCATION_FILTER_FALLBACK_USED',
+        message:
+          'No experience-aligned jobs matched the requested country/location policy; returning fallback-ranked jobs.',
+        meta: { experienceAlignedJobs: experienceAligned.length },
+      });
+    } else if (locationEligibleCount < experienceAligned.length) {
+      findings.push({
+        stage: 'filter',
+        severity: 'info',
+        code: 'LOCATION_FILTER_DROPPED',
+        message: 'Some experience-aligned jobs were deprioritized by country/location policy.',
+        meta: {
+          kept: locationEligibleCount,
+          dropped: experienceAligned.length - locationEligibleCount,
+        },
+      });
+    }
+
     const prioritized = this.prioritizeJobs(experienceAligned, query);
     counts.prioritizedJobs = prioritized.length;
     if (prioritized.length === 0) {
@@ -183,18 +229,36 @@ export class ScraperTool {
   }
 
   private normalizeQuery(input: JobProfile | JobSearchQuery): JobSearchQuery {
+    const country = this.normalizeCountry(
+      'experience' in input ? env.SCRAPER_DEFAULT_COUNTRY : (input.filters?.country ?? env.SCRAPER_DEFAULT_COUNTRY),
+    );
+    const inputLocation = 'experience' in input ? undefined : input.location;
+    const explicitLocations = 'experience' in input ? undefined : input.filters?.locations;
+    const locations =
+      explicitLocations && explicitLocations.length > 0
+        ? explicitLocations
+        : this.defaultLocationsForCountry(country, inputLocation);
+    const remoteOnly =
+      ('experience' in input ? false : (input.filters?.remoteOnly ?? false)) ||
+      this.hasRemoteSignal(inputLocation, locations);
+    const experienceBand = this.experienceBandFor(
+      input.computedExperienceYears,
+      'experience' in input ? input.experience : undefined,
+    );
+
     if ('experience' in input) {
       return {
         role: input.role,
-        location: 'Hyderabad',
+        location: locations[0],
         skills: input.skills,
+        computedExperienceYears: input.computedExperienceYears,
         filters: {
-          remoteOnly: false,
+          remoteOnly,
           postedWithinHours: 24 * 14,
-          country: 'India',
-          locations: ['Hyderabad', 'Bengaluru'],
-          minExperienceYears: 0,
-          maxExperienceYears: 2,
+          country,
+          locations,
+          minExperienceYears: experienceBand.min,
+          maxExperienceYears: experienceBand.max,
         },
         priority: {
           companyTierOrder: ['top', 'mid', 'other'],
@@ -208,15 +272,14 @@ export class ScraperTool {
       ...input,
       maxResults: input.maxResults ?? 50,
       filters: {
-        remoteOnly: input.filters?.remoteOnly ?? false,
+        remoteOnly,
         postedWithinHours: input.filters?.postedWithinHours ?? 24 * 14,
         employmentType: input.filters?.employmentType,
-        country: input.filters?.country ?? 'India',
-        locations: input.filters?.locations ?? ['Hyderabad', 'Bengaluru'],
+        country,
+        locations,
         minSalaryLpa: input.filters?.minSalaryLpa,
-        // Strict policy: discovery fetch is limited to early-career roles only.
-        minExperienceYears: 0,
-        maxExperienceYears: 2,
+        minExperienceYears: input.filters?.minExperienceYears ?? experienceBand.min,
+        maxExperienceYears: input.filters?.maxExperienceYears ?? experienceBand.max,
       },
       priority: {
         companyTierOrder: input.priority?.companyTierOrder ?? ['top', 'mid', 'other'],
@@ -241,24 +304,24 @@ export class ScraperTool {
     return batches.flat();
   }
 
-  // Strategy 1b: India-focused sources and aggregators.
-  private async fetchFromIndianSources(query: JobSearchQuery): Promise<NormalizedJob[]> {
-    if (!env.INDIAN_JOB_SOURCES_ENABLED) {
+  // Strategy 1b: country-focused sources and aggregators.
+  private async fetchFromCountrySources(query: JobSearchQuery): Promise<NormalizedJob[]> {
+    if (this.isIndiaCountry(query.filters?.country) && !env.INDIAN_JOB_SOURCES_ENABLED) {
       this.log('Indian sources disabled (INDIAN_JOB_SOURCES_ENABLED=false)');
       return [];
     }
 
     const roles = this.expandRoles(query).slice(0, 4);
-    this.log('Adzuna fetch temporarily disabled');
-    const [jsearch, linkedin] = await Promise.all([
+    const [adzuna, jsearch, linkedin] = await Promise.all([
+      this.scrapeAdzunaApi(query, roles),
       this.scrapeRapidApiJSearch(query, roles),
       this.scrapeLinkedInPublic(query),
     ]);
 
-    return [...jsearch, ...linkedin];
+    return [...adzuna, ...jsearch, ...linkedin];
   }
 
-  private async scrapeAdzunaIndiaApi(
+  private async scrapeAdzunaApi(
     query: JobSearchQuery,
     roles: string[],
   ): Promise<NormalizedJob[]> {
@@ -268,11 +331,21 @@ export class ScraperTool {
     }
 
     const out: NormalizedJob[] = [];
-    const where = (query.filters?.locations?.[0] || query.location || 'India').trim();
+    const countryCode = this.adzunaCountryCode(query.filters?.country);
+    if (!countryCode) {
+      this.log(`Adzuna skipped: unsupported country=${query.filters?.country || 'unknown'}`);
+      return [];
+    }
+    const where = (
+      query.filters?.locations?.[0] ||
+      query.location ||
+      query.filters?.country ||
+      env.SCRAPER_DEFAULT_COUNTRY
+    ).trim();
 
     for (const role of roles) {
       const url =
-        `https://api.adzuna.com/v1/api/jobs/in/search/1` +
+        `https://api.adzuna.com/v1/api/jobs/${countryCode}/search/1` +
         `?app_id=${encodeURIComponent(env.ADZUNA_APP_ID)}` +
         `&app_key=${encodeURIComponent(env.ADZUNA_APP_KEY)}` +
         `&results_per_page=50` +
@@ -303,7 +376,7 @@ export class ScraperTool {
         const salaryLpa = this.toLpa(job.salary_min, job.salary_max);
 
         out.push({
-          source: 'adzuna-india',
+          source: `adzuna-${countryCode}`,
           externalId: `adzuna-${job.id ?? this.slugify(`${job.company.display_name}-${job.title}`)}`,
           title: job.title,
           company: job.company.display_name,
@@ -313,6 +386,7 @@ export class ScraperTool {
             job.location?.display_name ||
             (job.location?.area || []).join(', ') ||
             query.filters?.locations?.[0] ||
+            query.filters?.country ||
             'India',
           description: this.cleanText(job.description),
           requirements: this.inferRequirementsFromText(job.description, query.skills),
@@ -336,13 +410,19 @@ export class ScraperTool {
     }
 
     const out: NormalizedJob[] = [];
-    const where = (query.filters?.locations?.[0] || query.location || 'India').trim();
+    const countryCode = this.jsearchCountryCode(query.filters?.country);
+    const where = (
+      query.filters?.locations?.[0] ||
+      query.location ||
+      query.filters?.country ||
+      env.SCRAPER_DEFAULT_COUNTRY
+    ).trim();
 
     for (const role of roles) {
       const requestUrl =
         `https://${env.RAPIDAPI_HOST}/search` +
         `?query=${encodeURIComponent(`${role} in ${where}`)}` +
-        `&page=1&num_pages=1&country=in&date_posted=all`;
+        `&page=1&num_pages=1&country=${encodeURIComponent(countryCode)}&date_posted=all`;
 
       const res = await this.fetchWithTimeout(requestUrl, 15_000, {
         'X-RapidAPI-Key': env.RAPIDAPI_KEY,
@@ -384,7 +464,10 @@ export class ScraperTool {
       for (const row of rows) {
         if (!row.job_title || !row.employer_name || !row.job_description || !row.job_apply_link)
           continue;
-        const location = [row.job_city, row.job_country].filter(Boolean).join(', ') || 'India';
+        const location =
+          [row.job_city, row.job_country].filter(Boolean).join(', ') ||
+          query.filters?.country ||
+          env.SCRAPER_DEFAULT_COUNTRY;
         const salaryLpa = this.toLpa(row.job_min_salary, row.job_max_salary);
 
         out.push({
@@ -427,7 +510,7 @@ export class ScraperTool {
     const out: NormalizedJob[] = [];
     const locations = query.filters?.locations?.length
       ? query.filters.locations.slice(0, 2)
-      : ['India'];
+      : this.defaultLocationsForCountry(query.filters?.country).slice(0, 2);
     const starts = Array.from({ length: 8 }, (_, i) => i * 25);
 
     for (const loc of locations) {
@@ -616,7 +699,7 @@ export class ScraperTool {
     const out: NormalizedJob[] = [];
     const locations = query.filters?.locations?.length
       ? query.filters.locations.slice(0, 2)
-      : ['India'];
+      : this.defaultLocationsForCountry(query.filters?.country).slice(0, 2);
 
     try {
       browser = await this.launchChromiumWithFallback();
@@ -1007,7 +1090,7 @@ export class ScraperTool {
     const skills = (query.skills || ['Node.js', 'TypeScript', 'MongoDB']).slice(0, 6);
     const preferredLocations = query.filters?.locations?.length
       ? query.filters.locations
-      : this.defaultIndiaLocations();
+      : this.defaultLocationsForCountry(query.filters?.country);
     return [
       {
         source: 'seed-fallback',
@@ -1016,7 +1099,7 @@ export class ScraperTool {
         company: 'Microsoft',
         companyTier: 'top',
         salaryLpa: 42,
-        location: preferredLocations[0] || 'Hyderabad',
+        location: preferredLocations[0] || query.filters?.country || 'Remote',
         description: `Fallback job generated because external sources returned no data for role "${role}".`,
         requirements: skills,
         applyUrl: 'https://example.com/apply/fallback-1',
@@ -1029,7 +1112,7 @@ export class ScraperTool {
         company: 'Atlassian',
         companyTier: 'top',
         salaryLpa: 38,
-        location: preferredLocations[1] || 'Bengaluru',
+        location: preferredLocations[1] || query.filters?.country || 'Remote',
         description: `Fallback platform role for ${role}.`,
         requirements: skills,
         applyUrl: 'https://example.com/apply/fallback-2',
@@ -1042,7 +1125,7 @@ export class ScraperTool {
         company: 'Razorpay',
         companyTier: 'mid',
         salaryLpa: 30,
-        location: preferredLocations[2] || 'Pune',
+        location: preferredLocations[2] || query.filters?.country || 'Remote',
         description: `Fallback mid-tier role for ${role}.`,
         requirements: skills,
         applyUrl: 'https://example.com/apply/fallback-3',
@@ -1068,7 +1151,6 @@ export class ScraperTool {
 
       try {
         this.log('Attempting native Firefox launch...');
-        const { firefox } = require('playwright');
         return await firefox.launch({ headless: true });
       } catch (fallbackError) {
         this.log(
@@ -1205,6 +1287,11 @@ export class ScraperTool {
       out.add('LLM Engineer');
       out.add('Applied AI Engineer');
     }
+    if (this.isRemoteQuery(query)) {
+      out.add(`Remote ${base}`);
+      out.add('Remote Backend Engineer');
+      out.add('Remote Software Engineer');
+    }
 
     return [...out].slice(0, 7);
   }
@@ -1312,10 +1399,10 @@ export class ScraperTool {
   }
 
   private prioritizeJobs(jobs: JobPosting[], query: JobSearchQuery): JobPosting[] {
-    const preferredLocations = (query.filters?.locations ?? ['Hyderabad', 'Bengaluru']).map((l) =>
-      l.toLowerCase(),
-    );
-    const country = (query.filters?.country ?? '').toLowerCase().trim();
+    const remoteMode = this.isRemoteQuery(query);
+    const preferredLocations = (
+      query.filters?.locations ?? this.defaultLocationsForCountry(query.filters?.country)
+    ).map((l) => l.toLowerCase());
     const tierOrder = query.priority?.companyTierOrder ?? ['top', 'mid', 'other'];
     const tierRank = new Map<CompanyTier, number>(
       tierOrder.map((tier, idx) => [tier, idx] as const),
@@ -1323,47 +1410,63 @@ export class ScraperTool {
     const highPayFirst = query.priority?.highPayFirst ?? true;
     const minSalaryLpa = query.filters?.minSalaryLpa ?? 0;
 
-    const byLocation = preferredLocations.length
-      ? jobs.filter((job) => this.matchesPreferredLocation(job.location, preferredLocations))
-      : jobs;
+    const ranked = jobs
+      .map((job) => ({
+        job,
+        matchClass: this.classifyJobLocation(job, query, preferredLocations),
+      }))
+      .filter((item) => item.matchClass !== 'no_match');
 
-    const byCountry = country
-      ? byLocation.filter((job) => this.matchesCountry(job.location, country))
-      : byLocation;
-
-    const locationScoped = byCountry;
-
-    const salaryScoped = locationScoped.filter((job) => (job.salaryLpa ?? 0) >= minSalaryLpa);
+    const locationScoped = ranked.length > 0 ? ranked : jobs.map((job) => ({ job, matchClass: 'no_match' as const }));
+    const salaryScoped = locationScoped.filter((item) => (item.job.salaryLpa ?? 0) >= minSalaryLpa);
     const filtered = salaryScoped.length > 0 ? salaryScoped : locationScoped;
 
     return filtered.sort((a, b) => {
-      const aLoc = this.locationPriority(a.location, preferredLocations);
-      const bLoc = this.locationPriority(b.location, preferredLocations);
+      const aClass = this.locationMatchRank(a.matchClass, remoteMode);
+      const bClass = this.locationMatchRank(b.matchClass, remoteMode);
+      if (aClass !== bClass) return aClass - bClass;
+
+      if (env.SCRAPER_REMOTE_BOOST || remoteMode) {
+        const remoteDelta = this.remotePriority(a.job) - this.remotePriority(b.job);
+        if (remoteDelta !== 0) return remoteDelta;
+      }
+
+      const aLoc = this.locationPriority(a.job.location, preferredLocations);
+      const bLoc = this.locationPriority(b.job.location, preferredLocations);
       if (aLoc !== bLoc) return aLoc - bLoc;
 
-      const aLinkedIn = (a.source || '').includes('linkedin') ? 0 : 1;
-      const bLinkedIn = (b.source || '').includes('linkedin') ? 0 : 1;
+      const aLinkedIn = (a.job.source || '').includes('linkedin') ? 0 : 1;
+      const bLinkedIn = (b.job.source || '').includes('linkedin') ? 0 : 1;
       if (aLinkedIn !== bLinkedIn) return aLinkedIn - bLinkedIn;
 
-      const aEarly = this.isEarlyCareerRole(a) ? 0 : 1;
-      const bEarly = this.isEarlyCareerRole(b) ? 0 : 1;
+      const aEarly = this.isEarlyCareerRole(a.job) ? 0 : 1;
+      const bEarly = this.isEarlyCareerRole(b.job) ? 0 : 1;
       if (aEarly !== bEarly) return aEarly - bEarly;
 
-      const aTier = tierRank.get(a.companyTier ?? 'other') ?? 99;
-      const bTier = tierRank.get(b.companyTier ?? 'other') ?? 99;
+      const aTier = tierRank.get(a.job.companyTier ?? 'other') ?? 99;
+      const bTier = tierRank.get(b.job.companyTier ?? 'other') ?? 99;
       if (aTier !== bTier) return aTier - bTier;
 
-      const aHighPay = (a.salaryLpa ?? 0) >= 15 ? 0 : 1;
-      const bHighPay = (b.salaryLpa ?? 0) >= 15 ? 0 : 1;
+      const aHighPay = (a.job.salaryLpa ?? 0) >= 15 ? 0 : 1;
+      const bHighPay = (b.job.salaryLpa ?? 0) >= 15 ? 0 : 1;
       if (aHighPay !== bHighPay) return aHighPay - bHighPay;
 
       if (highPayFirst) {
-        const salaryDelta = (b.salaryLpa ?? 0) - (a.salaryLpa ?? 0);
+        const salaryDelta = (b.job.salaryLpa ?? 0) - (a.job.salaryLpa ?? 0);
         if (salaryDelta !== 0) return salaryDelta;
       }
 
-      return (a.title || '').localeCompare(b.title || '');
-    });
+      return (a.job.title || '').localeCompare(b.job.title || '');
+    }).map((item) => item.job);
+  }
+
+  private countLocationEligibleJobs(jobs: JobPosting[], query: JobSearchQuery): number {
+    const preferredLocations = (
+      query.filters?.locations ?? this.defaultLocationsForCountry(query.filters?.country)
+    ).map((l) => l.toLowerCase());
+    return jobs.filter(
+      (job) => this.classifyJobLocation(job, query, preferredLocations) !== 'no_match',
+    ).length;
   }
 
   private matchesPreferredLocation(location: string | undefined, preferred: string[]): boolean {
@@ -1385,19 +1488,51 @@ export class ScraperTool {
   private matchesCountry(location: string | undefined, country: string): boolean {
     if (!location) return false;
     const value = location.toLowerCase();
+    const normalizedCountry = this.normalizeCountry(country).toLowerCase();
 
-    if (country === 'india') {
-      return (
-        value.includes('india') ||
-        value.includes('hyderabad') ||
-        value.includes('bangalore') ||
-        value.includes('bengaluru') ||
-        value.includes('pune') ||
-        value.includes('chennai')
-      );
-    }
+    return this.countryLocationSignals(normalizedCountry).some((signal) => value.includes(signal));
+  }
 
-    return value.includes(country);
+  private classifyJobLocation(
+    job: JobPosting,
+    query: JobSearchQuery,
+    preferredLocations: string[],
+  ): LocationMatchClass {
+    const country = query.filters?.country;
+    const remoteMode = this.isRemoteQuery(query);
+    const locationMatches = this.matchesPreferredLocation(job.location, preferredLocations);
+    const countryMatches = country ? this.matchesCountry(job.location, country) : false;
+    const remote = this.hasRemoteJobSignal(job);
+
+    if (locationMatches) return 'location_match';
+    if (countryMatches) return 'country_match';
+    if (!remote) return country || preferredLocations.length > 0 ? 'no_match' : 'country_match';
+    if (!country) return 'remote_global';
+
+    const remoteText = `${job.location || ''} ${job.description || ''}`.toLowerCase();
+    if (this.remoteTextAllowsCountry(remoteText, country)) return 'remote_country_match';
+    if (this.isGlobalRemoteText(remoteText)) return remoteMode ? 'remote_global' : 'remote_global';
+
+    return remoteMode ? 'remote_global' : 'no_match';
+  }
+
+  private locationMatchRank(matchClass: LocationMatchClass, remoteMode: boolean): number {
+    const ranks: Record<LocationMatchClass, number> = remoteMode
+      ? {
+          location_match: 0,
+          remote_country_match: 1,
+          country_match: 2,
+          remote_global: 3,
+          no_match: 9,
+        }
+      : {
+          location_match: 0,
+          country_match: 1,
+          remote_country_match: 2,
+          remote_global: 4,
+          no_match: 9,
+        };
+    return ranks[matchClass];
   }
 
   private inferCompanyTier(company: string): CompanyTier {
@@ -1458,8 +1593,179 @@ export class ScraperTool {
     return undefined;
   }
 
-  private defaultIndiaLocations(): string[] {
-    return ['Hyderabad', 'Bengaluru'];
+  private normalizeCountry(value: string | undefined): string {
+    const country = (value || env.SCRAPER_DEFAULT_COUNTRY || 'India').trim();
+    if (!country) return 'India';
+    const lower = country.toLowerCase();
+    const aliases: Record<string, string> = {
+      in: 'India',
+      india: 'India',
+      us: 'United States',
+      usa: 'United States',
+      'united states of america': 'United States',
+      uk: 'United Kingdom',
+      gb: 'United Kingdom',
+      england: 'United Kingdom',
+      uae: 'United Arab Emirates',
+      america: 'United States',
+    };
+    return aliases[lower] || country;
+  }
+
+  private defaultLocationsForCountry(country: string | undefined, requestedLocation?: string): string[] {
+    if (requestedLocation && requestedLocation.trim()) return [requestedLocation.trim()];
+    const normalized = this.normalizeCountry(country).toLowerCase();
+    if (normalized === 'india') return ['Hyderabad', 'Bengaluru'];
+    if (normalized === 'united states')
+      return ['United States', 'New York', 'San Francisco', 'Chicago', 'Austin', 'Seattle'];
+    if (normalized === 'united kingdom') return ['United Kingdom', 'London', 'Manchester'];
+    if (normalized === 'canada') return ['Canada', 'Toronto', 'Vancouver'];
+    if (normalized === 'germany') return ['Germany', 'Berlin', 'Munich'];
+    if (normalized === 'australia') return ['Australia', 'Sydney', 'Melbourne'];
+    if (normalized === 'france') return ['France', 'Paris'];
+    if (normalized === 'new zealand') return ['New Zealand', 'Auckland'];
+    if (normalized === 'brazil') return ['Brazil', 'Sao Paulo'];
+    if (normalized === 'south africa') return ['South Africa', 'Cape Town', 'Johannesburg'];
+    return [this.normalizeCountry(country)];
+  }
+
+  private isIndiaCountry(country: string | undefined): boolean {
+    return this.normalizeCountry(country).toLowerCase() === 'india';
+  }
+
+  private jsearchCountryCode(country: string | undefined): string {
+    const normalized = this.normalizeCountry(country).toLowerCase();
+    const codes: Record<string, string> = {
+      india: 'in',
+      'united states': 'us',
+      'united kingdom': 'gb',
+      canada: 'ca',
+      germany: 'de',
+      france: 'fr',
+      australia: 'au',
+      'new zealand': 'nz',
+      poland: 'pl',
+      brazil: 'br',
+      austria: 'at',
+      'south africa': 'za',
+      singapore: 'sg',
+      'united arab emirates': 'ae',
+    };
+    return codes[normalized] || 'us';
+  }
+
+  private adzunaCountryCode(country: string | undefined): string | null {
+    const normalized = this.normalizeCountry(country).toLowerCase();
+    const codes: Record<string, string> = {
+      india: 'in',
+      'united states': 'us',
+      'united kingdom': 'gb',
+      canada: 'ca',
+      australia: 'au',
+      germany: 'de',
+      france: 'fr',
+      'new zealand': 'nz',
+      poland: 'pl',
+      brazil: 'br',
+      austria: 'at',
+      'south africa': 'za',
+    };
+    return codes[normalized] || null;
+  }
+
+  private experienceBandFor(
+    computedYears: number | undefined,
+    experience: JobProfile['experience'] | undefined,
+  ): { min?: number; max?: number } {
+    if (typeof computedYears === 'number' && Number.isFinite(computedYears)) {
+      if (computedYears < 2) return { min: 0, max: 2 };
+      if (computedYears < 4) return { min: 1, max: 4 };
+      if (computedYears < 7) return { min: 3, max: 7 };
+      return { min: 5 };
+    }
+
+    const level = String(experience || '').toLowerCase();
+    if (level.includes('fresher') || level.includes('junior')) return { min: 0, max: 2 };
+    if (level.includes('mid')) return { min: 2, max: 5 };
+    if (level.includes('senior')) return { min: 5 };
+    return {};
+  }
+
+  private isRemoteQuery(query: JobSearchQuery): boolean {
+    return Boolean(
+      query.filters?.remoteOnly ||
+        this.hasRemoteSignal(query.location, query.filters?.locations || []) ||
+        this.hasRemoteSignal(query.filters?.country, []),
+    );
+  }
+
+  private hasRemoteSignal(location: string | undefined, locations: string[]): boolean {
+    const values = [location, ...locations].filter((value): value is string => Boolean(value));
+    return values.some((value) => /\bremote\b|work from home|wfh|anywhere/i.test(value));
+  }
+
+  private hasRemoteJobSignal(job: JobPosting): boolean {
+    return this.remotePriority(job) === 0;
+  }
+
+  private remoteTextAllowsCountry(text: string, country: string): boolean {
+    const normalizedCountry = this.normalizeCountry(country).toLowerCase();
+    return this.countryLocationSignals(normalizedCountry).some((signal) => text.includes(signal));
+  }
+
+  private isGlobalRemoteText(text: string): boolean {
+    return (
+      text.includes('worldwide') ||
+      text.includes('anywhere') ||
+      text.includes('global') ||
+      text.includes('remote') ||
+      text.includes('work from home') ||
+      text.includes('wfh')
+    );
+  }
+
+  private remotePriority(job: JobPosting): number {
+    const text = `${job.source} ${job.title} ${job.location || ''} ${job.description}`.toLowerCase();
+    const explicit =
+      text.includes('remote') ||
+      text.includes('work from home') ||
+      text.includes('wfh') ||
+      text.includes('anywhere') ||
+      (job.source || '').toLowerCase().includes('remotive') ||
+      (job.source || '').toLowerCase().includes('weworkremotely');
+    return explicit ? 0 : 1;
+  }
+
+  private countryLocationSignals(normalizedCountry: string): string[] {
+    const signals: Record<string, string[]> = {
+      india: ['india', 'hyderabad', 'bangalore', 'bengaluru', 'pune', 'chennai', 'delhi', 'mumbai'],
+      'united states': [
+        'united states',
+        'usa',
+        'u.s.',
+        ' us ',
+        'new york',
+        'san francisco',
+        'chicago',
+        'austin',
+        'seattle',
+        'california',
+        'texas',
+      ],
+      'united kingdom': ['united kingdom', 'uk', 'london', 'manchester', 'england', 'scotland'],
+      canada: ['canada', 'toronto', 'vancouver', 'ontario', 'british columbia'],
+      germany: ['germany', 'berlin', 'munich', 'hamburg'],
+      australia: ['australia', 'sydney', 'melbourne'],
+      france: ['france', 'paris'],
+      'new zealand': ['new zealand', 'auckland'],
+      poland: ['poland', 'warsaw'],
+      brazil: ['brazil', 'sao paulo', 'rio de janeiro'],
+      austria: ['austria', 'vienna'],
+      'south africa': ['south africa', 'cape town', 'johannesburg'],
+      singapore: ['singapore'],
+      'united arab emirates': ['united arab emirates', 'uae', 'dubai', 'abu dhabi'],
+    };
+    return signals[normalizedCountry] || [normalizedCountry];
   }
 
   private locationPriority(location: string | undefined, preferred: string[]): number {

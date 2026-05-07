@@ -1,0 +1,58 @@
+openapi: 3.0.3
+info:
+  title: Job Agent API
+  version: 0.1.0
+  description: >
+    API documentation for job discovery, application automation, profile hydration,
+    auth-session status, tracking, and health checks.
+servers:
+  - url: http://localhost:3000
+    description: Local development
+tags:
+  - name: Discovery
+  - name: Profile
+  - name: Auth
+  - name: Application
+  - name: Tracking
+  - name: Health
+paths:
+  /workflows/discovery/run:
+    $ref: ./paths/discovery.yaml#/~1workflows~1discovery~1run
+  /workflows/discovery/understand:
+    $ref: ./paths/discovery.yaml#/~1workflows~1discovery~1understand
+  /profile/candidate:
+    $ref: ./paths/profile.yaml#/~1profile~1candidate
+  /auth/linkedin/status:
+    $ref: ./paths/auth.yaml#/~1auth~1linkedin~1status
+  /auth/google/status:
+    $ref: ./paths/auth.yaml#/~1auth~1google~1status
+  /workflows/application/run:
+    $ref: ./paths/application.yaml#/~1workflows~1application~1run
+  /workflows/tracking/run:
+    $ref: ./paths/tracking.yaml#/~1workflows~1tracking~1run
+  /health:
+    $ref: ./paths/health.yaml#/~1health
+components:
+  schemas:
+    ErrorResponse:
+      $ref: ./components/schemas.yaml#/ErrorResponse
+    DiscoveryRequest:
+      $ref: ./components/schemas.yaml#/DiscoveryRequest
+    DiscoveryRunResult:
+      $ref: ./components/schemas.yaml#/DiscoveryRunResult
+    DiscoveryUnderstandResult:
+      $ref: ./components/schemas.yaml#/DiscoveryUnderstandResult
+    CandidateProfileResponse:
+      $ref: ./components/schemas.yaml#/CandidateProfileResponse
+    AuthStatusResponse:
+      $ref: ./components/schemas.yaml#/AuthStatusResponse
+    GoogleAuthStatusResponse:
+      $ref: ./components/schemas.yaml#/GoogleAuthStatusResponse
+    ApplicationRunRequest:
+      $ref: ./components/schemas.yaml#/ApplicationRunRequest
+    ApplicationRunResponse:
+      $ref: ./components/schemas.yaml#/ApplicationRunResponse
+    TrackingRunResponse:
+      $ref: ./components/schemas.yaml#/TrackingRunResponse
+    HealthResponse:
+      $ref: ./components/schemas.yaml#/HealthResponse

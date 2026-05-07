@@ -1,0 +1,47 @@
+/auth/linkedin/status:
+  get:
+    tags:
+      - Auth
+    summary: Get LinkedIn auth-session status
+    operationId: getLinkedInAuthStatus
+    parameters:
+      - $ref: ../components/headers.yaml#/AcceptJson
+    responses:
+      "200":
+        description: LinkedIn auth-session status
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/AuthStatusResponse
+      "400":
+        $ref: ../components/errors.yaml#/BadRequest
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized
+      "404":
+        $ref: ../components/errors.yaml#/NotFound
+      "500":
+        $ref: ../components/errors.yaml#/InternalServerError
+
+/auth/google/status:
+  get:
+    tags:
+      - Auth
+    summary: Get Google auth-session status
+    operationId: getGoogleAuthStatus
+    parameters:
+      - $ref: ../components/headers.yaml#/AcceptJson
+    responses:
+      "200":
+        description: Google auth-session status
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/GoogleAuthStatusResponse
+      "400":
+        $ref: ../components/errors.yaml#/BadRequest
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized
+      "404":
+        $ref: ../components/errors.yaml#/NotFound
+      "500":
+        $ref: ../components/errors.yaml#/InternalServerError
