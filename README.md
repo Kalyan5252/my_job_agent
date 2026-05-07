@@ -67,3 +67,55 @@ npm run dev:cron
 - Set `POSTGRES_URL` to your Neon connection string (usually includes `sslmode=require`).
 - Leave `POSTGRES_SSL_MODE=prefer` (default) or set `require` explicitly.
 - Keep `POSTGRES_SSL_REJECT_UNAUTHORIZED=true` for production-safe TLS verification.
+
+## Discovery Controls
+
+Country-aware discovery uses `SCRAPER_DEFAULT_COUNTRY=India` when a request does not include
+`country`. Request-level `country` and `locations` override the env default. Country-capable
+sources such as Adzuna, JSearch, and LinkedIn public search run for supported countries; remote
+boards are used for remote mode or fallback when country sources are too sparse.
+
+Experience filters are derived from the hydrated candidate profile. The agent computes
+`computedExperienceYears` from structured work dates when available, experience-highlight date
+ranges when present, or `manualProfile.json` `preferences.skillYears` as fallback. Explicit
+`minExperienceYears` and `maxExperienceYears` in a discovery request override the computed band.
+
+Remote discovery can be triggered with `remoteOnly: true`, `location: "Remote"`, or
+`locations: ["Remote"]`. In remote mode, Remotive and We Work Remotely are prioritized. Country
+remote searches include country-restricted and worldwide remote roles; non-remote country searches
+prefer explicit city/country matches and use remote/global results only as fallback. Set
+`SCRAPER_REMOTE_BOOST=true` to rank explicit remote jobs above location-preferred jobs.
+
+Example discovery payload:
+
+```json
+{
+  "role": "Backend Engineer",
+  "country": "India",
+  "locations": ["Hyderabad", "Bengaluru"],
+  "remoteOnly": false,
+  "maxResults": 40
+}
+```
+
+Example remote payload:
+
+```json
+{
+  "role": "Backend Engineer",
+  "country": "United States",
+  "remoteOnly": true,
+  "maxResults": 40
+}
+```
+
+Example global remote payload:
+
+```json
+{
+  "role": "Backend Engineer",
+  "locations": ["Remote"],
+  "remoteOnly": true,
+  "maxResults": 40
+}
+```

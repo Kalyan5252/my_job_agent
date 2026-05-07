@@ -1,0 +1,23 @@
+/workflows/tracking/run:
+  post:
+    tags:
+      - Tracking
+    summary: Run application status tracking from email
+    operationId: runTracking
+    parameters:
+      - $ref: ../components/headers.yaml#/AcceptJson
+    responses:
+      "200":
+        description: Tracking workflow completed
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/TrackingRunResponse
+      "400":
+        $ref: ../components/errors.yaml#/BadRequest
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized
+      "404":
+        $ref: ../components/errors.yaml#/NotFound
+      "500":
+        $ref: ../components/errors.yaml#/InternalServerError
