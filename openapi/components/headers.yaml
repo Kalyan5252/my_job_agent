@@ -16,3 +16,26 @@ AcceptJson:
     type: string
     default: application/json
   description: Preferred response media type.
+
+XRateLimitLimit:
+  schema:
+    type: integer
+  description: Maximum number of requests allowed in the current time window.
+
+XRateLimitRemaining:
+  schema:
+    type: integer
+    minimum: 0
+  description: Remaining requests allowed in the current time window.
+
+XRateLimitReset:
+  schema:
+    type: integer
+    minimum: 0
+  description: Seconds until the current rate-limit window resets.
+
+RetryAfter:
+  schema:
+    type: integer
+    minimum: 0
+  description: Seconds a client should wait before retrying after a 429 response.

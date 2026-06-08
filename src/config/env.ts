@@ -19,6 +19,8 @@ const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().default(3000),
   LOG_LEVEL: z.string().default('info'),
+  API_RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(60),
+  API_RATE_LIMIT_TIME_WINDOW_MS: z.coerce.number().int().min(1000).default(60_000),
 
   AI_PROVIDER: z.enum(['openai', 'openrouter']).default('openai'),
   OPENAI_API_KEY: z.string().optional(),
@@ -57,6 +59,8 @@ const EnvSchema = z.object({
   SCRAPER_ALLOW_SYNTHETIC_FALLBACK: BoolFromEnv.default(false),
   SCRAPER_DEFAULT_COUNTRY: z.string().default('India'),
   SCRAPER_REMOTE_BOOST: BoolFromEnv.default(false),
+  EXPORT_SPREADSHEET_ENABLED: BoolFromEnv.default(true),
+  EXPORT_SPREADSHEET_DIR: z.string().default('data/exports'),
   INDIAN_JOB_SOURCES_ENABLED: BoolFromEnv.default(true),
   ADZUNA_APP_ID: z.string().optional(),
   ADZUNA_APP_KEY: z.string().optional(),

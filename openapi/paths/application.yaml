@@ -24,6 +24,8 @@
         $ref: ../components/errors.yaml#/BadRequest
       "401":
         $ref: ../components/errors.yaml#/Unauthorized
+      "429":
+        $ref: ../components/errors.yaml#/TooManyRequests
       "404":
         $ref: ../components/errors.yaml#/NotFound
       "500":

@@ -41,3 +41,23 @@ InternalServerError:
         statusCode: 500
         error: Internal Server Error
         message: Unexpected failure
+
+TooManyRequests:
+  description: Client exceeded the configured request rate limit.
+  headers:
+    X-RateLimit-Limit:
+      $ref: ./headers.yaml#/XRateLimitLimit
+    X-RateLimit-Remaining:
+      $ref: ./headers.yaml#/XRateLimitRemaining
+    X-RateLimit-Reset:
+      $ref: ./headers.yaml#/XRateLimitReset
+    Retry-After:
+      $ref: ./headers.yaml#/RetryAfter
+  content:
+    application/json:
+      schema:
+        $ref: ./schemas.yaml#/ErrorResponse
+      example:
+        statusCode: 429
+        error: Too Many Requests
+        message: Rate limit exceeded. Retry after 60 seconds.

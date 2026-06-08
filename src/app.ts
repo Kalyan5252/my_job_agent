@@ -1,5 +1,6 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
+import rateLimit from '@fastify/rate-limit';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import fs from 'node:fs';
@@ -10,6 +11,7 @@ import { TrackingWorkflow } from './workflows/tracking.workflow';
 import { ApplyWorkflow } from './workflows/apply.workflow';
 import { ResumeService } from './services/resume.service';
 import { BrowserTool } from './tools/browser.tool';
+import { resolveDiscoveryExportPath } from './services/discoveryExport.service';
 import {
   ApplicationRunOptions,
   CompanyTier,
@@ -81,6 +83,27 @@ export function createApp() {
     origin: '*', 
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   });
+  app.register(rateLimit, {
+    global: true,
+    max: env.API_RATE_LIMIT_MAX,
+    timeWindow: env.API_RATE_LIMIT_TIME_WINDOW_MS,
+    addHeaders: {
+      'x-ratelimit-limit': true,
+      'x-ratelimit-remaining': true,
+      'x-ratelimit-reset': true,
+      'retry-after': true,
+    },
+    addHeadersOnExceeding: {
+      'x-ratelimit-limit': true,
+      'x-ratelimit-remaining': true,
+      'x-ratelimit-reset': true,
+    },
+    errorResponseBuilder: (_request, context) => ({
+      statusCode: context.statusCode,
+      error: 'Too Many Requests',
+      message: `Rate limit exceeded. Retry after ${context.after}.`,
+    }),
+  });
 
   app.register(swagger, {
     mode: 'static',
@@ -113,6 +136,32 @@ export function createApp() {
     service: 'job-agent',
     at: new Date().toISOString(),
   }));
+  app.get('/exports/discovery/:fileName', async (request, reply) => {
+    const { fileName } = request.params as { fileName: string };
+    const resolvedPath = resolveDiscoveryExportPath(fileName);
+
+    if (!resolvedPath) {
+      return reply.code(400).send({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'Invalid export file name',
+      });
+    }
+
+    if (!fs.existsSync(resolvedPath)) {
+      return reply.code(404).send({
+        statusCode: 404,
+        error: 'Not Found',
+        message: 'Export file not found',
+      });
+    }
+
+    return reply
+      .header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+      .header('Content-Disposition', `attachment; filename="${path.basename(resolvedPath)}"`)
+      .header('Cache-Control', 'no-store')
+      .send(fs.createReadStream(resolvedPath));
+  });
   app.get('/auth/linkedin/status', async () => ({
     enabled: env.LINKEDIN_AUTH_ENABLED,
     storageStatePath: env.LINKEDIN_STORAGE_STATE_PATH,
@@ -181,6 +230,7 @@ export function createApp() {
           applyRecommended: runResult.applyCount,
         },
         diagnostics: runResult.diagnostics,
+        export: runResult.export,
         findings: summarizeFindings(runResult.diagnostics.findings),
         topRequirementSummary,
         jobs: detailedJobs,
