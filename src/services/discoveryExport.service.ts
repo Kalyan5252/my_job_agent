@@ -1,6 +1,6 @@
 import fs from 'node:fs';
-import path from 'node:path';
-import ExcelJS from 'exceljs';
+import { google, sheets_v4 } from 'googleapis';
+import type { JWT } from 'google-auth-library';
 import { env } from '../config/env';
 import {
   DiscoveryDiagnostics,
@@ -17,289 +17,346 @@ export interface DiscoveryExportInput {
   diagnostics: DiscoveryDiagnostics;
 }
 
-export class DiscoveryExportService {
-  async exportDiscoveryRun(input: DiscoveryExportInput): Promise<DiscoveryExportMetadata> {
-    const fileName = buildDiscoveryExportFileName(input.profile.role);
-    const filePath = resolveDiscoveryExportPath(fileName) ?? path.resolve(getDiscoveryExportDir(), fileName);
-    const downloadUrl = `/exports/discovery/${encodeURIComponent(fileName)}`;
+const GOOGLE_AUTH_SCOPES = [
+  'https://www.googleapis.com/auth/spreadsheets',
+  'https://www.googleapis.com/auth/drive.file',
+];
 
-    if (!env.EXPORT_SPREADSHEET_ENABLED) {
-      return {
-        status: 'skipped',
-        format: 'xlsx',
-        fileName,
-        filePath,
-        downloadUrl,
-        rowCount: input.jobs.length,
-      };
+const SUMMARY_SHEET_ID = 0;
+const JOBS_SHEET_ID = 1;
+
+const JOBS_HEADERS = [
+  'Rank',
+  'Title',
+  'Company',
+  'Location',
+  'Source',
+  'Company Tier',
+  'Salary LPA',
+  'Score',
+  'Apply',
+  'Apply URL',
+  'Requirements',
+  'Reasoning',
+  'External ID',
+  'Description',
+];
+
+export class DiscoveryExportService {
+  private authClient: JWT | null = null;
+
+  async exportDiscoveryRun(input: DiscoveryExportInput): Promise<DiscoveryExportMetadata> {
+    const rowCount = input.jobs.length;
+
+    if (!env.EXPORT_GOOGLE_SHEETS_ENABLED) {
+      return { status: 'skipped', target: 'google-sheets', rowCount };
     }
 
     try {
-      await fs.promises.mkdir(getDiscoveryExportDir(), { recursive: true });
+      const auth = this.getAuthClient();
+      const sheets = google.sheets({ version: 'v4', auth });
+      const drive = google.drive({ version: 'v3', auth });
 
-      const workbook = new ExcelJS.Workbook();
-      workbook.creator = 'my-job-agent';
-      workbook.created = new Date();
-      workbook.modified = new Date();
-      workbook.properties.date1904 = false;
+      const title = `Discovery — ${input.profile.role || 'jobs'} — ${new Date().toISOString()}`;
 
-      const summarySheet = workbook.addWorksheet('Summary');
-      const jobsSheet = workbook.addWorksheet('Jobs');
+      const created = await sheets.spreadsheets.create({
+        requestBody: {
+          properties: { title },
+          sheets: [
+            { properties: { sheetId: SUMMARY_SHEET_ID, title: 'Summary' } },
+            { properties: { sheetId: JOBS_SHEET_ID, title: 'Jobs' } },
+          ],
+        },
+      });
 
-      this.writeSummarySheet(summarySheet, input);
-      this.writeJobsSheet(jobsSheet, input.jobs);
+      const spreadsheetId = created.data.spreadsheetId;
+      if (!spreadsheetId) {
+        throw new Error('Google Sheets API did not return a spreadsheetId');
+      }
+      const spreadsheetUrl =
+        created.data.spreadsheetUrl ||
+        `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`;
 
-      await workbook.xlsx.writeFile(filePath);
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId,
+        requestBody: {
+          requests: [
+            ...this.buildSummaryRequests(input),
+            ...this.buildJobsRequests(input.jobs),
+          ],
+        },
+      });
+
+      if (env.GOOGLE_SHEETS_DRIVE_FOLDER_ID) {
+        await drive.files.update({
+          fileId: spreadsheetId,
+          addParents: env.GOOGLE_SHEETS_DRIVE_FOLDER_ID,
+          fields: 'id, parents',
+          supportsAllDrives: true,
+        });
+      }
+
+      if (env.GOOGLE_SHEETS_SHARE_EMAIL) {
+        await drive.permissions.create({
+          fileId: spreadsheetId,
+          sendNotificationEmail: false,
+          supportsAllDrives: true,
+          requestBody: {
+            type: 'user',
+            role: 'writer',
+            emailAddress: env.GOOGLE_SHEETS_SHARE_EMAIL,
+          },
+        });
+      }
 
       return {
         status: 'created',
-        format: 'xlsx',
-        fileName,
-        filePath,
-        downloadUrl,
-        rowCount: input.jobs.length,
+        target: 'google-sheets',
+        spreadsheetId,
+        spreadsheetUrl,
+        rowCount,
       };
     } catch (error) {
-      console.error(
-        `[export] discovery spreadsheet generation failed: ${formatError(error)}`
-      );
-
+      console.error(`[export] google sheets export failed: ${formatError(error)}`);
       return {
         status: 'failed',
-        format: 'xlsx',
-        fileName,
-        filePath,
-        downloadUrl,
-        rowCount: input.jobs.length,
+        target: 'google-sheets',
+        rowCount,
         errorMessage: formatError(error),
       };
     }
   }
 
-  writeSummarySheet(sheet: ExcelJS.Worksheet, input: DiscoveryExportInput): void {
-    sheet.columns = [
-      { key: 'label', width: 28 },
-      { key: 'value', width: 72 },
-      { key: 'extra', width: 24 },
-    ];
-    sheet.views = [{ state: 'frozen', ySplit: 1 }];
+  private getAuthClient(): JWT {
+    if (this.authClient) return this.authClient;
 
-    sheet.mergeCells('A1:C1');
-    const titleCell = sheet.getCell('A1');
-    titleCell.value = 'Discovery Export';
-    titleCell.font = { bold: true, size: 15 };
-    titleCell.alignment = { horizontal: 'center' };
-    titleCell.fill = solidFill('1F2937');
-    titleCell.font = { bold: true, color: { argb: 'FFFFFF' }, size: 15 };
-    titleCell.border = thinBorder();
-
-    let row = 3;
-    row = this.writeSectionHeader(sheet, row, 'Run Details');
-    row = this.writeKeyValueRows(sheet, row, [
-      ['Role', input.profile.role],
-      [
-        'Preferred Location',
-        input.searchQuery?.location ||
-          input.searchQuery?.filters?.locations?.join(', ') ||
-          'Any',
-      ],
-      ['Skills', input.profile.skills.join(', ') || 'N/A'],
-      ['Experience', input.profile.experience],
-      ['Total Jobs', String(input.jobs.length)],
-      ['Apply Recommended', String(input.jobs.filter((job) => job.apply).length)],
-    ]);
-
-    row += 1;
-    row = this.writeSectionHeader(sheet, row, 'Diagnostics');
-    row = this.writeKeyValueRows(sheet, row, [
-      ['API Jobs', String(input.diagnostics.counts.apiJobs)],
-      ['Indian Jobs', String(input.diagnostics.counts.indianJobs)],
-      ['HTML Jobs', String(input.diagnostics.counts.htmlJobs)],
-      ['Browser Jobs', String(input.diagnostics.counts.browserJobs)],
-      ['Merged Jobs', String(input.diagnostics.counts.mergedJobs)],
-      ['Actionable Jobs', String(input.diagnostics.counts.actionableJobs)],
-      ['Skill Aligned Jobs', String(input.diagnostics.counts.skillAlignedJobs)],
-      ['Candidate Jobs', String(input.diagnostics.counts.candidateJobs)],
-      ['Experience Aligned Jobs', String(input.diagnostics.counts.experienceAlignedJobs)],
-      ['Prioritized Jobs', String(input.diagnostics.counts.prioritizedJobs)],
-    ]);
-
-    row += 1;
-    row = this.writeSectionHeader(sheet, row, 'Source Breakdown');
-
-    const sourceCounts = countSources(input.jobs);
-    const sourceEntries = Object.entries(sourceCounts).sort((a, b) => b[1] - a[1]);
-    const sourceHeaderRow = sheet.getRow(row);
-    sourceHeaderRow.values = [undefined, 'Source', 'Jobs'];
-    styleHeaderRow(sourceHeaderRow);
-    row += 1;
-
-    for (const [source, count] of sourceEntries) {
-      const currentRow = sheet.getRow(row);
-      currentRow.values = [undefined, source, count];
-      currentRow.eachCell({ includeEmpty: true }, (cell) => {
-        cell.border = thinBorder();
-      });
-      row += 1;
-    }
-
-    sheet.getColumn(1).width = 28;
-    sheet.getColumn(2).width = 72;
-    sheet.getColumn(3).width = 24;
+    const credentials = loadServiceAccountCredentials();
+    this.authClient = new google.auth.JWT({
+      email: credentials.client_email,
+      key: credentials.private_key,
+      scopes: GOOGLE_AUTH_SCOPES,
+    });
+    return this.authClient;
   }
 
-  writeJobsSheet(sheet: ExcelJS.Worksheet, jobs: ScoredJob[]): void {
-    sheet.columns = [
-      { header: 'Rank', key: 'rank', width: 8 },
-      { header: 'Title', key: 'title', width: 28 },
-      { header: 'Company', key: 'company', width: 24 },
-      { header: 'Location', key: 'location', width: 24 },
-      { header: 'Source', key: 'source', width: 18 },
-      { header: 'Company Tier', key: 'companyTier', width: 14 },
-      { header: 'Salary LPA', key: 'salaryLpa', width: 12 },
-      { header: 'Score', key: 'score', width: 8 },
-      { header: 'Apply', key: 'apply', width: 10 },
-      { header: 'Apply URL', key: 'applyUrl', width: 48 },
-      { header: 'Requirements', key: 'requirements', width: 42 },
-      { header: 'Reasoning', key: 'reasoning', width: 60 },
-      { header: 'External ID', key: 'externalId', width: 28 },
-      { header: 'Description', key: 'description', width: 80 },
-    ];
-    sheet.views = [{ state: 'frozen', ySplit: 1 }];
-    sheet.autoFilter = {
-      from: 'A1',
-      to: 'N1',
-    };
+  private buildSummaryRequests(input: DiscoveryExportInput): sheets_v4.Schema$Request[] {
+    const location =
+      input.searchQuery?.location ||
+      input.searchQuery?.filters?.locations?.join(', ') ||
+      'Any';
+    const { counts } = input.diagnostics;
 
-    const header = sheet.getRow(1);
-    styleHeaderRow(header);
+    const rows: SummaryRow[] = [
+      sectionRow('Discovery Export'),
+      blankRow(),
+      sectionRow('Run Details'),
+      kvRow('Role', input.profile.role),
+      kvRow('Preferred Location', location),
+      kvRow('Skills', input.profile.skills.join(', ') || 'N/A'),
+      kvRow('Experience', String(input.profile.experience ?? '')),
+      kvRow('Total Jobs', String(input.jobs.length)),
+      kvRow('Apply Recommended', String(input.jobs.filter((job) => job.apply).length)),
+      blankRow(),
+      sectionRow('Diagnostics'),
+      kvRow('API Jobs', String(counts.apiJobs)),
+      kvRow('Indian Jobs', String(counts.indianJobs)),
+      kvRow('HTML Jobs', String(counts.htmlJobs)),
+      kvRow('Browser Jobs', String(counts.browserJobs)),
+      kvRow('Merged Jobs', String(counts.mergedJobs)),
+      kvRow('Actionable Jobs', String(counts.actionableJobs)),
+      kvRow('Skill Aligned Jobs', String(counts.skillAlignedJobs)),
+      kvRow('Candidate Jobs', String(counts.candidateJobs)),
+      blankRow(),
+      sectionRow('Source Breakdown'),
+      headerRow(['Source', 'Jobs']),
+    ];
+
+    const sourceEntries = Object.entries(countSources(input.jobs)).sort((a, b) => b[1] - a[1]);
+    for (const [source, count] of sourceEntries) {
+      rows.push(plainRow([source, String(count)]));
+    }
+
+    return [
+      {
+        updateCells: {
+          start: { sheetId: SUMMARY_SHEET_ID, rowIndex: 0, columnIndex: 0 },
+          rows: rows.map(toRowData),
+          fields: 'userEnteredValue,userEnteredFormat',
+        },
+      },
+      autoResizeRequest(SUMMARY_SHEET_ID, 0, 2),
+    ];
+  }
+
+  private buildJobsRequests(jobs: ScoredJob[]): sheets_v4.Schema$Request[] {
+    const rows: SummaryRow[] = [headerRow(JOBS_HEADERS)];
 
     jobs.forEach((job, index) => {
-      const row = sheet.addRow({
-        rank: index + 1,
-        title: job.title,
-        company: job.company,
-        location: job.location || '',
-        source: job.source,
-        companyTier: job.companyTier || '',
-        salaryLpa: job.salaryLpa ?? '',
-        score: job.score,
-        apply: job.apply ? 'Yes' : 'No',
-        applyUrl: job.applyUrl || '',
-        requirements: (job.requirements || []).join(', '),
-        reasoning: job.reasoning || '',
-        externalId: job.externalId,
-        description: job.description,
-      });
-
-      row.alignment = { vertical: 'top', wrapText: true };
-      row.eachCell({ includeEmpty: true }, (cell) => {
-        cell.border = thinBorder();
-      });
+      rows.push(
+        plainRow([
+          String(index + 1),
+          job.title,
+          job.company,
+          job.location || '',
+          job.source,
+          job.companyTier || '',
+          job.salaryLpa != null ? String(job.salaryLpa) : '',
+          String(job.score),
+          job.apply ? 'Yes' : 'No',
+          job.applyUrl || '',
+          (job.requirements || []).join(', '),
+          job.reasoning || '',
+          job.externalId,
+          job.description,
+        ]),
+      );
     });
-  }
 
-  private writeSectionHeader(sheet: ExcelJS.Worksheet, rowNumber: number, title: string): number {
-    const row = sheet.getRow(rowNumber);
-    row.values = [undefined, title, undefined];
-    row.getCell(1).fill = solidFill('E5E7EB');
-    row.getCell(2).fill = solidFill('E5E7EB');
-    row.getCell(3).fill = solidFill('E5E7EB');
-    row.getCell(1).font = { bold: true };
-    row.getCell(2).font = { bold: true };
-    row.getCell(3).font = { bold: true };
-    row.getCell(1).border = thinBorder();
-    row.getCell(2).border = thinBorder();
-    row.getCell(3).border = thinBorder();
-    return rowNumber + 1;
-  }
-
-  private writeKeyValueRows(
-    sheet: ExcelJS.Worksheet,
-    startRow: number,
-    rows: Array<[string, string]>
-  ): number {
-    let rowNumber = startRow;
-    for (const [label, value] of rows) {
-      const row = sheet.getRow(rowNumber);
-      row.values = [undefined, label, value];
-      row.getCell(1).border = thinBorder();
-      row.getCell(2).border = thinBorder();
-      row.getCell(3).border = thinBorder();
-      row.getCell(1).font = { bold: true };
-      row.getCell(2).alignment = { wrapText: true };
-      row.getCell(3).alignment = { wrapText: true };
-      rowNumber += 1;
-    }
-
-    return rowNumber;
+    return [
+      {
+        updateCells: {
+          start: { sheetId: JOBS_SHEET_ID, rowIndex: 0, columnIndex: 0 },
+          rows: rows.map(toRowData),
+          fields: 'userEnteredValue,userEnteredFormat',
+        },
+      },
+      {
+        updateSheetProperties: {
+          properties: {
+            sheetId: JOBS_SHEET_ID,
+            gridProperties: { frozenRowCount: 1 },
+          },
+          fields: 'gridProperties.frozenRowCount',
+        },
+      },
+      {
+        setBasicFilter: {
+          filter: {
+            range: {
+              sheetId: JOBS_SHEET_ID,
+              startRowIndex: 0,
+              startColumnIndex: 0,
+              endColumnIndex: JOBS_HEADERS.length,
+            },
+          },
+        },
+      },
+      autoResizeRequest(JOBS_SHEET_ID, 0, JOBS_HEADERS.length),
+    ];
   }
 }
 
-export function getDiscoveryExportDir(): string {
-  return path.resolve(process.cwd(), env.EXPORT_SPREADSHEET_DIR);
+interface SummaryCell {
+  value: string;
+  bold?: boolean;
+  background?: { red: number; green: number; blue: number };
+  foregroundWhite?: boolean;
 }
 
-export function resolveDiscoveryExportPath(fileName: string): string | null {
-  if (!isSafeDiscoveryExportFileName(fileName)) return null;
+type SummaryRow = SummaryCell[];
 
-  const exportDir = getDiscoveryExportDir();
-  const resolved = path.resolve(exportDir, fileName);
-  const relative = path.relative(exportDir, resolved);
-  if (relative.startsWith('..') || path.isAbsolute(relative)) return null;
+const DARK = { red: 0.067, green: 0.094, blue: 0.153 };
+const LIGHT = { red: 0.898, green: 0.906, blue: 0.922 };
 
-  return resolved;
+function sectionRow(title: string): SummaryRow {
+  return [{ value: title, bold: true, background: LIGHT }];
 }
 
-function buildDiscoveryExportFileName(role: string): string {
-  const roleSlug = slugify(role) || 'jobs';
-  const timestamp = new Date().toISOString().replace(/:/g, '-').replace(/\./g, '-');
-  return `discovery-${roleSlug}-${timestamp}.xlsx`;
+function headerRow(values: string[]): SummaryRow {
+  return values.map((value) => ({
+    value,
+    bold: true,
+    background: DARK,
+    foregroundWhite: true,
+  }));
 }
 
-function isSafeDiscoveryExportFileName(fileName: string): boolean {
-  return /^[a-z0-9._-]+\.xlsx$/i.test(fileName);
+function kvRow(label: string, value: string): SummaryRow {
+  return [{ value: label, bold: true }, { value }];
 }
 
-function slugify(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+function plainRow(values: string[]): SummaryRow {
+  return values.map((value) => ({ value }));
+}
+
+function blankRow(): SummaryRow {
+  return [{ value: '' }];
+}
+
+function toRowData(row: SummaryRow): sheets_v4.Schema$RowData {
+  return {
+    values: row.map((cell) => {
+      const format: sheets_v4.Schema$CellFormat = {};
+      if (cell.bold || cell.foregroundWhite) {
+        format.textFormat = {
+          bold: cell.bold || false,
+          foregroundColor: cell.foregroundWhite ? { red: 1, green: 1, blue: 1 } : undefined,
+        };
+      }
+      if (cell.background) {
+        format.backgroundColor = cell.background;
+      }
+      return {
+        userEnteredValue: { stringValue: cell.value },
+        userEnteredFormat: format,
+      };
+    }),
+  };
+}
+
+function autoResizeRequest(
+  sheetId: number,
+  startColumnIndex: number,
+  endColumnIndex: number,
+): sheets_v4.Schema$Request {
+  return {
+    autoResizeDimensions: {
+      dimensions: {
+        sheetId,
+        dimension: 'COLUMNS',
+        startIndex: startColumnIndex,
+        endIndex: endColumnIndex,
+      },
+    },
+  };
+}
+
+interface ServiceAccountCredentials {
+  client_email: string;
+  private_key: string;
+}
+
+function loadServiceAccountCredentials(): ServiceAccountCredentials {
+  const raw = env.GOOGLE_SERVICE_ACCOUNT_KEY;
+  if (!raw) {
+    throw new Error('GOOGLE_SERVICE_ACCOUNT_KEY is not configured');
+  }
+
+  const json = raw.trim().startsWith('{') ? raw : fs.readFileSync(raw, 'utf8');
+
+  let parsed: Partial<ServiceAccountCredentials>;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    throw new Error(
+      'GOOGLE_SERVICE_ACCOUNT_KEY is not valid JSON (or a readable JSON key file path)',
+    );
+  }
+
+  if (!parsed.client_email || !parsed.private_key) {
+    throw new Error('Service account key is missing client_email or private_key');
+  }
+
+  return { client_email: parsed.client_email, private_key: parsed.private_key };
 }
 
 function countSources(jobs: ScoredJob[]): Record<string, number> {
   const counts: Record<string, number> = {};
-
   for (const job of jobs) {
     const key = job.source || 'unknown';
     counts[key] = (counts[key] || 0) + 1;
   }
-
   return counts;
-}
-
-function styleHeaderRow(row: ExcelJS.Row): void {
-  row.eachCell({ includeEmpty: true }, (cell) => {
-    cell.font = { bold: true, color: { argb: 'FFFFFF' } };
-    cell.fill = solidFill('111827');
-    cell.border = thinBorder();
-    cell.alignment = { wrapText: true, vertical: 'middle' };
-  });
-}
-
-function thinBorder(): Partial<ExcelJS.Borders> {
-  return {
-    top: { style: 'thin' },
-    left: { style: 'thin' },
-    bottom: { style: 'thin' },
-    right: { style: 'thin' },
-  };
-}
-
-function solidFill(color: string): ExcelJS.Fill {
-  return {
-    type: 'pattern',
-    pattern: 'solid',
-    fgColor: { argb: color },
-  };
 }
 
 function formatError(error: unknown): string {

@@ -63,10 +63,9 @@ export type DiscoveryExportStatus = 'created' | 'failed' | 'skipped';
 
 export interface DiscoveryExportMetadata {
   status: DiscoveryExportStatus;
-  format: 'xlsx';
-  fileName: string;
-  filePath: string;
-  downloadUrl: string;
+  target: 'google-sheets';
+  spreadsheetId?: string;
+  spreadsheetUrl?: string;
   rowCount: number;
   errorMessage?: string;
 }
