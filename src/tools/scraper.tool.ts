@@ -9,6 +9,8 @@ import {
 } from '../types';
 import { AiScraperService } from '../services/aiScraper.service';
 import { env } from '../config/env';
+import { CompanyCareerSource } from '../sources/companyCareer.source';
+import { ApifySource } from '../sources/apify.source';
 
 interface NormalizedJob extends Omit<JobPosting, 'location'> {
   location: string;
@@ -24,6 +26,8 @@ type LocationMatchClass =
 
 export class ScraperTool {
   private readonly aiScraper = new AiScraperService();
+  private readonly companyCareerSource = new CompanyCareerSource();
+  private readonly apifySource = new ApifySource();
   private lastDiagnostics: DiscoveryDiagnostics = this.emptyDiagnostics();
 
   async fetchJobs(input: JobProfile | JobSearchQuery): Promise<JobPosting[]> {
@@ -33,6 +37,14 @@ export class ScraperTool {
       `Starting scrape: role="${query.role}", location="${query.location || 'any'}", country="${query.filters?.country || 'any'}", remote=${remoteMode}`,
     );
     const findings: DiscoveryFinding[] = [];
+
+    const companyJobs = env.COMPANY_CAREER_SOURCES_ENABLED
+      ? await this.fetchFromCompanyCareerSources(query, findings)
+      : [];
+    this.log(`Company-career strategy returned ${companyJobs.length} jobs`);
+
+    const apifyJobs = await this.fetchFromApify(query, findings);
+    this.log(`Apify strategy returned ${apifyJobs.length} jobs`);
 
     const countryJobs = await this.fetchFromCountrySources(query);
     this.log(`Country-source strategy returned ${countryJobs.length} jobs`);
@@ -63,6 +75,8 @@ export class ScraperTool {
 
     const counts = {
       apiJobs: apiJobs.length,
+      companyJobs: companyJobs.length,
+      apifyJobs: apifyJobs.length,
       indianJobs: countryJobs.length,
       htmlJobs: htmlJobs.length,
       browserJobs: browserJobs.length,
@@ -74,7 +88,14 @@ export class ScraperTool {
       prioritizedJobs: 0,
     };
 
-    const merged = this.dedupeJobs([...countryJobs, ...apiJobs, ...htmlJobs, ...browserJobs]);
+    const merged = this.dedupeJobs([
+      ...companyJobs,
+      ...apifyJobs,
+      ...countryJobs,
+      ...apiJobs,
+      ...htmlJobs,
+      ...browserJobs,
+    ]);
     counts.mergedJobs = merged.length;
     const sourceBreakdown = this.sourceBreakdown(merged);
     findings.push({
@@ -286,6 +307,86 @@ export class ScraperTool {
         highPayFirst: input.priority?.highPayFirst ?? true,
       },
     };
+  }
+
+  // Strategy 1: API scraping (fast + reliable).
+  private async fetchFromCompanyCareerSources(
+    query: JobSearchQuery,
+    findings: DiscoveryFinding[],
+  ): Promise<NormalizedJob[]> {
+    const result = await this.companyCareerSource.fetchJobs(query);
+    const breakdown = result.diagnostics.reduce<Record<string, unknown>>((acc, diagnostic) => {
+      acc[diagnostic.company] = diagnostic;
+      return acc;
+    }, {});
+    findings.push({
+      stage: 'source',
+      severity: 'info',
+      code: 'COMPANY_SOURCE_BREAKDOWN',
+      message: 'Collected jobs from configured company career pages',
+      meta: breakdown,
+    });
+
+    const failed = result.diagnostics.filter((diagnostic) => diagnostic.error);
+    if (failed.length > 0) {
+      findings.push({
+        stage: 'source',
+        severity: 'warning',
+        code: 'COMPANY_SOURCE_PARTIAL_FAILURE',
+        message: 'One or more company career pages could not be fetched.',
+        meta: {
+          failed: failed.map((diagnostic) => ({
+            company: diagnostic.company,
+            provider: diagnostic.provider,
+            error: diagnostic.error,
+          })),
+        },
+      });
+    }
+
+    return result.jobs.map((job) => ({
+      ...job,
+      location: job.location || 'Not specified',
+      strategy: 'api',
+    }));
+  }
+
+  // Strategy 1: API scraping (fast + reliable).
+  private async fetchFromApify(
+    query: JobSearchQuery,
+    findings: DiscoveryFinding[],
+  ): Promise<NormalizedJob[]> {
+    const result = await this.apifySource.fetchJobs(query);
+    if (result.diagnostics.length === 0) return [];
+
+    findings.push({
+      stage: 'source',
+      severity: 'info',
+      code: 'APIFY_SOURCE_BREAKDOWN',
+      message: 'Collected jobs from configured Apify actors',
+      meta: {
+        actors: result.diagnostics,
+      },
+    });
+
+    const failed = result.diagnostics.filter((diagnostic) => diagnostic.error);
+    if (failed.length > 0) {
+      findings.push({
+        stage: 'source',
+        severity: 'warning',
+        code: 'APIFY_SOURCE_PARTIAL_FAILURE',
+        message: 'One or more Apify actors could not be fetched.',
+        meta: {
+          failed,
+        },
+      });
+    }
+
+    return result.jobs.map((job) => ({
+      ...job,
+      location: job.location || 'Not specified',
+      strategy: 'api',
+    }));
   }
 
   // Strategy 1: API scraping (fast + reliable).

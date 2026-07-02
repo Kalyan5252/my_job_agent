@@ -46,6 +46,8 @@ export interface DiscoveryFinding {
 export interface DiscoveryDiagnostics {
   counts: {
     apiJobs: number;
+    companyJobs?: number;
+    apifyJobs?: number;
     indianJobs: number;
     htmlJobs: number;
     browserJobs: number;
@@ -55,6 +57,10 @@ export interface DiscoveryDiagnostics {
     candidateJobs: number;
     experienceAlignedJobs: number;
     prioritizedJobs: number;
+    persistedJobs?: number;
+    newJobs?: number;
+    existingJobs?: number;
+    duplicateInputJobs?: number;
   };
   findings: DiscoveryFinding[];
 }
@@ -76,6 +82,12 @@ export interface DiscoveryRunResult {
   jobs: ScoredJob[];
   diagnostics: DiscoveryDiagnostics;
   export: DiscoveryExportMetadata;
+}
+
+export interface DiscoveryQueuedResult {
+  runId: string;
+  status: 'queued';
+  queuedAt: string;
 }
 
 export interface JobPosting {

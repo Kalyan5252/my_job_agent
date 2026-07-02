@@ -1,6 +1,5 @@
-import { jobsCollection } from '../db/mongo/client';
-import { enqueueApplication } from '../queues/apply.queue';
 import { env } from '../config/env';
+import { JobRepository } from '../repositories/job.repository';
 import { LLMService } from '../services/llm.service';
 import { OpenRouterRateLimitError, isOpenRouterRateLimitError } from '../services/llm.service';
 import { ResumeService } from '../services/resume.service';
@@ -13,6 +12,7 @@ export class JobHunterAgent {
   private readonly llm = new LLMService();
   private readonly resumeService = new ResumeService();
   private readonly scoring = new ScoringService(this.llm);
+  private readonly jobs = new JobRepository();
 
   async run(
     profile: JobProfile,
@@ -30,19 +30,30 @@ export class JobHunterAgent {
     });
     const scored = await this.scoreJobs(hydratedProfile, jobs);
 
-    const coll = await jobsCollection();
-    if (scored.length > 0) {
-      await coll.insertMany(scored);
-    }
-
-    const eligible = scored.filter((job) => job.apply);
-    for (const job of eligible) {
-      await enqueueApplication({ job, profile: hydratedProfile });
-    }
+    const discoveryRunId = `discovery-${new Date().toISOString()}`;
+    const saveResult = await this.jobs.saveDiscoveryJobs(scored, { discoveryRunId });
+    const diagnostics = this.scraper.getLastDiagnostics();
+    diagnostics.counts.persistedJobs = saveResult.jobs.length;
+    diagnostics.counts.newJobs = saveResult.newJobs.length;
+    diagnostics.counts.existingJobs = saveResult.existingJobs.length;
+    diagnostics.counts.duplicateInputJobs = saveResult.duplicateInputCount;
+    diagnostics.findings.push({
+      stage: 'result',
+      severity: 'info',
+      code: 'PERSISTENCE_SUMMARY',
+      message: 'Discovery jobs were upserted by source and external id.',
+      meta: {
+        discoveryRunId,
+        persistedJobs: saveResult.jobs.length,
+        newJobs: saveResult.newJobs.length,
+        existingJobs: saveResult.existingJobs.length,
+        duplicateInputJobs: saveResult.duplicateInputCount,
+      },
+    });
 
     return {
-      jobs: scored,
-      diagnostics: this.scraper.getLastDiagnostics(),
+      jobs: saveResult.jobs,
+      diagnostics,
     };
   }
 
