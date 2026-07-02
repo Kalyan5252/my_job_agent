@@ -104,6 +104,15 @@ const EnvSchema = z.object({
   DISCOVERY_SCRAPE_WORKER_CONCURRENCY: z.coerce.number().int().min(1).default(4),
   DISCOVERY_AI_WORKER_CONCURRENCY: z.coerce.number().int().min(1).default(4),
   DISCOVERY_WRITE_WORKER_CONCURRENCY: z.coerce.number().int().min(1).default(2),
+  DISCOVERY_SOURCE_CONCURRENCY: z.coerce.number().int().min(1).default(5),
+  DISCOVERY_SOURCE_RATE_LIMIT_MS: z.coerce.number().int().min(0).default(750),
+
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().default(587),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASSWORD: z.string().optional(),
+  SMTP_FROM: z.string().default('Job Agent <job-agent@example.local>'),
+  DIGEST_RECIPIENT_EMAIL: z.string().email().optional(),
 
   IMAP_HOST: z.string().default('imap.gmail.com'),
   IMAP_PORT: z.coerce.number().default(993),
@@ -124,11 +133,15 @@ export const env = EnvSchema.parse(process.env);
 
 function loadEnv(): void {
   const cwd = process.cwd();
-  const candidates = ['.env', '.env.local'];
+  const candidates = [
+    path.join(cwd, '.env'),
+    path.join(cwd, '.env.local'),
+    path.resolve(cwd, '..', '.env'),
+    path.resolve(cwd, '..', '.env.local'),
+  ];
   const merged: DotenvParseOutput = {};
 
-  for (const file of candidates) {
-    const envPath = path.join(cwd, file);
+  for (const envPath of candidates) {
     if (fs.existsSync(envPath)) {
       const parsed = dotenv.parse(fs.readFileSync(envPath));
       Object.assign(merged, parsed);
