@@ -10,31 +10,32 @@ const query = {
 };
 
 test('all requested company career sources are configured', () => {
-  assert.deepEqual(
-    COMPANY_CAREER_SOURCES.map((source) => source.company),
-    [
-      'OpenAI',
-      'Anthropic',
-      'Stripe',
-      'Datadog',
-      'Cloudflare',
-      'Snowflake',
-      'Atlassian',
-      'Notion',
-      'Canva',
-      'Rippling',
-      'Rubrik',
-      'MongoDB',
-      'Redis',
-      'Nvidia',
-      'Microsoft',
-      'Amazon',
-      'Google',
-      'Meta',
-      'Adobe',
-      'Oracle',
-    ],
-  );
+  const companies = COMPANY_CAREER_SOURCES.map((source) => source.company);
+  assert.ok(COMPANY_CAREER_SOURCES.filter((source) => source.enabled).length >= 30);
+  assert.deepEqual(companies.slice(0, 20), [
+    'OpenAI',
+    'Anthropic',
+    'Stripe',
+    'Datadog',
+    'Cloudflare',
+    'Snowflake',
+    'Atlassian',
+    'Notion',
+    'Canva',
+    'Rippling',
+    'Rubrik',
+    'MongoDB',
+    'Redis',
+    'Nvidia',
+    'Microsoft',
+    'Amazon',
+    'Google',
+    'Meta',
+    'Adobe',
+    'Oracle',
+  ]);
+  assert.ok(companies.includes('Palantir'));
+  assert.ok(companies.includes('Vercel'));
 });
 
 test('Ashby provider normalizes company jobs', async () => {
@@ -315,6 +316,20 @@ function fixtureFor(source: CompanyCareerSourceConfig): Record<string, unknown> 
             },
           ],
         },
+    };
+  }
+
+  if (source.provider === 'lever') {
+    return {
+      [`https://api.lever.co/v0/postings/${source.boardToken}?mode=json`]: [
+        {
+          id: `${source.slug}-job`,
+          text: 'Software Engineer',
+          hostedUrl: `${source.careersUrl}/software-engineer`,
+          categories: { location: 'Remote' },
+          descriptionPlain: 'TypeScript distributed systems',
+        },
+      ],
     };
   }
 
