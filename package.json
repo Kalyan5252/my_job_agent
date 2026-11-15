@@ -23,15 +23,17 @@
     "format:check": "prettier . --check"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.19.0"
   },
   "dependencies": {
     "@fastify/cors": "^11.2.0",
+    "@fastify/rate-limit": "^10.3.0",
     "@fastify/swagger": "^9.7.0",
     "@fastify/swagger-ui": "^5.2.6",
     "bullmq": "^5.12.7",
     "dotenv": "^16.4.5",
     "fastify": "^5.0.0",
+    "googleapis": "^144.0.0",
     "imap": "^0.8.19",
     "ioredis": "^5.4.1",
     "mailparser": "^3.7.1",
@@ -45,7 +47,7 @@
   "devDependencies": {
     "@types/imap": "^0.8.42",
     "@types/mailparser": "^3.4.6",
-    "@types/node": "^22.7.4",
+    "@types/node": "^22.19.0",
     "@types/node-cron": "^3.0.11",
     "@types/pg": "^8.20.0",
     "esbuild": "^0.18.20",

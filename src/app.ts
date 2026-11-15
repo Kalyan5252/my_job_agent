@@ -1,5 +1,6 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
+import rateLimit from '@fastify/rate-limit';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import fs from 'node:fs';
@@ -80,6 +81,27 @@ export function createApp() {
   app.register(cors, {
     origin: '*', 
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  });
+  app.register(rateLimit, {
+    global: true,
+    max: env.API_RATE_LIMIT_MAX,
+    timeWindow: env.API_RATE_LIMIT_TIME_WINDOW_MS,
+    addHeaders: {
+      'x-ratelimit-limit': true,
+      'x-ratelimit-remaining': true,
+      'x-ratelimit-reset': true,
+      'retry-after': true,
+    },
+    addHeadersOnExceeding: {
+      'x-ratelimit-limit': true,
+      'x-ratelimit-remaining': true,
+      'x-ratelimit-reset': true,
+    },
+    errorResponseBuilder: (_request, context) => ({
+      statusCode: context.statusCode,
+      error: 'Too Many Requests',
+      message: `Rate limit exceeded. Retry after ${context.after}.`,
+    }),
   });
 
   app.register(swagger, {
@@ -181,6 +203,7 @@ export function createApp() {
           applyRecommended: runResult.applyCount,
         },
         diagnostics: runResult.diagnostics,
+        export: runResult.export,
         findings: summarizeFindings(runResult.diagnostics.findings),
         topRequirementSummary,
         jobs: detailedJobs,

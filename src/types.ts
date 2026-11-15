@@ -59,11 +59,23 @@ export interface DiscoveryDiagnostics {
   findings: DiscoveryFinding[];
 }
 
+export type DiscoveryExportStatus = 'created' | 'failed' | 'skipped';
+
+export interface DiscoveryExportMetadata {
+  status: DiscoveryExportStatus;
+  target: 'google-sheets';
+  spreadsheetId?: string;
+  spreadsheetUrl?: string;
+  rowCount: number;
+  errorMessage?: string;
+}
+
 export interface DiscoveryRunResult {
   total: number;
   applyCount: number;
   jobs: ScoredJob[];
   diagnostics: DiscoveryDiagnostics;
+  export: DiscoveryExportMetadata;
 }
 
 export interface JobPosting {

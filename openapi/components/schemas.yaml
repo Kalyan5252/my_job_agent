@@ -10,6 +10,7 @@ ErrorResponse:
       enum:
         - 400
         - 401
+        - 429
         - 404
         - 500
     error:
