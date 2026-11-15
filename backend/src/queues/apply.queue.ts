@@ -1,31 +1,54 @@
+import crypto from 'node:crypto';
 import { Queue } from 'bullmq';
 import IORedis from 'ioredis';
 import { env } from '../config/env';
-import { JobProfile, ScoredJob } from '../types';
+import { HttpError } from '../lib/httpError';
+import { ApplicationRunOptions, JobProfile, ScoredJob } from '../types';
 
 export const APPLY_QUEUE_NAME = 'apply-jobs';
 
 let redisConnection: IORedis | null = null;
-let applyQueue: Queue | null = null;
+let applyQueue: Queue<ApplyJobPayload> | null = null;
 
 export interface ApplyJobPayload {
   job: ScoredJob;
   profile: JobProfile;
+  options?: ApplicationRunOptions;
+  reviewId?: string;
 }
 
-export async function enqueueApplication(payload: ApplyJobPayload): Promise<void> {
+export async function enqueueApplication(payload: ApplyJobPayload): Promise<{ jobId: string }> {
   if (!isRedisEnabled()) {
-    console.warn('[queue] Redis disabled. Skipping application enqueue.');
-    return;
+    throw new HttpError(
+      409,
+      'Queued applications need Redis (REDIS_ENABLED=true). Use the synchronous endpoint instead.',
+    );
   }
 
-  const queue = getApplyQueue();
-  await queue.add('apply', payload, {
-    attempts: 3,
+  const jobId = `apply-${crypto.randomUUID()}`;
+  await getApplyQueue().add('apply', payload, {
+    jobId,
+    // Submitting twice is worse than not submitting; retries only for dry-runs.
+    attempts: payload.options?.mode === 'submit' ? 1 : 3,
     backoff: { type: 'exponential', delay: 5_000 },
-    removeOnComplete: 100,
-    removeOnFail: 200,
+    removeOnComplete: 500,
+    removeOnFail: 500,
   });
+  return { jobId };
+}
+
+export async function getApplicationJobStatus(jobId: string) {
+  const job = await getApplyQueue().getJob(jobId);
+  if (!job) return null;
+  return {
+    jobId,
+    state: await job.getState(),
+    attemptsMade: job.attemptsMade,
+    failedReason: job.failedReason || undefined,
+    createdAt: new Date(job.timestamp).toISOString(),
+    finishedAt: job.finishedOn ? new Date(job.finishedOn).toISOString() : undefined,
+    outcome: job.returnvalue ?? undefined,
+  };
 }
 
 export function isRedisEnabled(): boolean {
@@ -50,9 +73,16 @@ export function getRedisConnection(): IORedis {
   return redisConnection;
 }
 
-export function getApplyQueue(): Queue {
+export async function closeRedis(): Promise<void> {
+  await applyQueue?.close().catch(() => undefined);
+  applyQueue = null;
+  await redisConnection?.quit().catch(() => undefined);
+  redisConnection = null;
+}
+
+export function getApplyQueue(): Queue<ApplyJobPayload> {
   if (!applyQueue) {
-    applyQueue = new Queue(APPLY_QUEUE_NAME, {
+    applyQueue = new Queue<ApplyJobPayload>(APPLY_QUEUE_NAME, {
       connection: getRedisConnection(),
     });
   }

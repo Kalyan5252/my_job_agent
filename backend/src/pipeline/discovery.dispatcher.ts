@@ -1,8 +1,4 @@
-import {
-  DiscoveryScoreTask,
-  DiscoveryScrapeTask,
-  DiscoveryWriteTask,
-} from './discovery.types';
+import { DiscoveryScoreTask, DiscoveryScrapeTask, DiscoveryWriteTask } from './discovery.types';
 
 export interface DiscoveryTaskDispatcher {
   dispatchScrape(task: DiscoveryScrapeTask): Promise<void>;

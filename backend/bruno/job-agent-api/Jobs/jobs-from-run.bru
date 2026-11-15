@@ -1,0 +1,15 @@
+meta {
+  name: Jobs from run
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/jobs
+  body: none
+  auth: inherit
+}
+
+params:query {
+  runId: {{runId}}
+}

@@ -1,0 +1,33 @@
+meta {
+  name: Patch candidate profile
+  type: http
+  seq: 6
+}
+
+patch {
+  url: {{baseUrl}}/profile/candidate
+  body: json
+  auth: inherit
+}
+
+params:query {
+  identity: {{identity}}
+}
+
+body:json {
+  {
+    "workHistory": [
+      {
+        "company": "Example Corp",
+        "title": "Backend Developer Intern",
+        "startDate": "Jan 2024",
+        "endDate": "Jun 2024"
+      }
+    ],
+    "skills": [
+      "TypeScript",
+      "Node.js",
+      "PostgreSQL"
+    ]
+  }
+}

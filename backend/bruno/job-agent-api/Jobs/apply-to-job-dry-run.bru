@@ -1,0 +1,20 @@
+meta {
+  name: Apply to job (dry-run)
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/jobs/{{jobId}}/apply
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "options": {
+      "mode": "dry-run",
+      "preview": true
+    }
+  }
+}

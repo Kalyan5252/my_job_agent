@@ -18,7 +18,43 @@ const BoolFromEnv = z.preprocess((value) => {
 const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().default(3000),
+  HOST: z.string().default('0.0.0.0'),
   LOG_LEVEL: z.string().default('info'),
+  TRUST_PROXY: BoolFromEnv.default(false),
+  CORS_ORIGINS: z.string().default(''),
+
+  // ---- API authentication ----
+  // Static keys for scripts/CI/cron (comma-separated, each >= 24 chars). Send as
+  // `Authorization: Bearer <key>` or `x-api-key: <key>`.
+  API_KEYS: z.string().default(''),
+  // Username/password login (POST /auth/login) that returns a short-lived token.
+  ADMIN_USERNAME: z.string().default('admin'),
+  // scrypt hash produced by `bun run auth:hash-password`.
+  ADMIN_PASSWORD_HASH: z.string().optional(),
+  AUTH_TOKEN_SECRET: z.string().optional(),
+  AUTH_TOKEN_TTL_SECONDS: z.coerce
+    .number()
+    .int()
+    .min(300)
+    .default(12 * 60 * 60),
+  AUTH_LOGIN_RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(10),
+  // Local development escape hatch. Refused when NODE_ENV=production.
+  AUTH_DISABLED: BoolFromEnv.default(false),
+
+  // ---- Runtime data (resumes, profiles, login sessions, screenshots) ----
+  DATA_DIR: z.string().default('data'),
+  // Encrypts saved LinkedIn/Google sessions at rest. Required in production.
+  DATA_ENCRYPTION_KEY: z.string().optional(),
+  MAX_RESUME_UPLOAD_BYTES: z.coerce
+    .number()
+    .int()
+    .min(1024)
+    .default(10 * 1024 * 1024),
+  // Allow opening a visible (headed) browser on the API host: interactive
+  // LinkedIn/Google login and `preview`/CAPTCHA hand-off. Off by default in production.
+  BROWSER_INTERACTIVE_ENABLED: BoolFromEnv.optional(),
+  // Use an installed browser instead of Playwright's bundled Chromium (e.g. "chrome").
+  BROWSER_CHANNEL: z.string().optional(),
   API_RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(60),
   API_RATE_LIMIT_TIME_WINDOW_MS: z.coerce.number().int().min(1000).default(60_000),
 
@@ -75,20 +111,19 @@ const EnvSchema = z.object({
   RAPIDAPI_HOST: z.string().default('jsearch.p.rapidapi.com'),
   LINKEDIN_SCRAPER_ENABLED: BoolFromEnv.default(true),
   LINKEDIN_AUTH_ENABLED: BoolFromEnv.default(true),
-  LINKEDIN_STORAGE_STATE_PATH: z.string().default('.auth/linkedin-storage-state.json'),
+  LINKEDIN_STORAGE_STATE_PATH: z.string().optional(),
   GOOGLE_AUTH_ENABLED: BoolFromEnv.default(true),
-  GOOGLE_STORAGE_STATE_PATH: z.string().default('.auth/google-storage-state.json'),
+  GOOGLE_STORAGE_STATE_PATH: z.string().optional(),
   GOOGLE_AUTH_DOMAIN_ALLOWLIST: z.string().default(''),
-  RESUME_FILE_PATH: z.string().default('data/resume/Kalyan Show (1).pdf'),
-  RESUME_TEXT_PATH: z.string().default('data/profile/resume.txt'),
-  CANDIDATE_PROFILE_PATH: z.string().default('data/profile/candidateProfile.json'),
-  MANUAL_PROFILE_PATH: z.string().default('data/profile/manualProfile.json'),
-  SECONDARY_EMAIL: z.string().default('you@example.com'),
-  SECONDARY_RESUME_FILE_PATH: z.string().default('data/resume/Kalyan Show (2).pdf'),
-  SECONDARY_RESUME_TEXT_PATH: z.string().default('data/profile/resume.secondary.txt'),
-  SECONDARY_CANDIDATE_PROFILE_PATH: z
-    .string()
-    .default('data/profile/candidateProfile.secondary.json'),
+  // Optional overrides; by default everything lives under DATA_DIR (see config/paths.ts).
+  RESUME_FILE_PATH: z.string().optional(),
+  RESUME_TEXT_PATH: z.string().optional(),
+  CANDIDATE_PROFILE_PATH: z.string().optional(),
+  MANUAL_PROFILE_PATH: z.string().optional(),
+  SECONDARY_EMAIL: z.string().email().optional(),
+  SECONDARY_RESUME_FILE_PATH: z.string().optional(),
+  SECONDARY_RESUME_TEXT_PATH: z.string().optional(),
+  SECONDARY_CANDIDATE_PROFILE_PATH: z.string().optional(),
 
   MONGODB_URI: z.string().default('mongodb://localhost:27017'),
   MONGODB_DB_NAME: z.string().default('job_agent'),
@@ -106,6 +141,11 @@ const EnvSchema = z.object({
   DISCOVERY_WRITE_WORKER_CONCURRENCY: z.coerce.number().int().min(1).default(2),
   DISCOVERY_SOURCE_CONCURRENCY: z.coerce.number().int().min(1).default(5),
   DISCOVERY_SOURCE_RATE_LIMIT_MS: z.coerce.number().int().min(0).default(750),
+  APPLY_WORKER_CONCURRENCY: z.coerce.number().int().min(1).default(1),
+
+  DISCOVERY_CRON: z.string().default('0 */6 * * *'),
+  TRACKING_CRON: z.string().default('*/20 * * * *'),
+  TRACKING_LOOKBACK_DAYS: z.coerce.number().int().min(1).max(60).default(7),
 
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().default(587),
@@ -129,7 +169,78 @@ const EnvSchema = z.object({
   DEFAULT_JOB_EXPERIENCE: z.string().default('fresher'),
 });
 
-export const env = EnvSchema.parse(process.env);
+const ProductionGuards = EnvSchema.superRefine((value, ctx) => {
+  const apiKeys = splitList(value.API_KEYS);
+  if (apiKeys.some((key) => key.length < 24)) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['API_KEYS'],
+      message: 'Each API key must be >= 24 characters.',
+    });
+  }
+  if (
+    value.ADMIN_PASSWORD_HASH &&
+    (!value.AUTH_TOKEN_SECRET || value.AUTH_TOKEN_SECRET.length < 32)
+  ) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['AUTH_TOKEN_SECRET'],
+      message: 'AUTH_TOKEN_SECRET (>= 32 chars) is required when ADMIN_PASSWORD_HASH is set.',
+    });
+  }
+  if (value.DATA_ENCRYPTION_KEY !== undefined && value.DATA_ENCRYPTION_KEY.length < 32) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['DATA_ENCRYPTION_KEY'],
+      message: 'Must be >= 32 characters.',
+    });
+  }
+
+  if (value.NODE_ENV !== 'production') return;
+  if (value.AUTH_DISABLED) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['AUTH_DISABLED'],
+      message: 'AUTH_DISABLED is not allowed in production.',
+    });
+  }
+  if (apiKeys.length === 0 && !value.ADMIN_PASSWORD_HASH) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['API_KEYS'],
+      message: 'Production requires API_KEYS and/or ADMIN_PASSWORD_HASH + AUTH_TOKEN_SECRET.',
+    });
+  }
+  if (!value.DATA_ENCRYPTION_KEY) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['DATA_ENCRYPTION_KEY'],
+      message: 'Production requires DATA_ENCRYPTION_KEY to encrypt saved login sessions.',
+    });
+  }
+});
+
+const parsedEnv = ProductionGuards.safeParse(process.env);
+if (!parsedEnv.success) {
+  const details = parsedEnv.error.issues
+    .map((issue) => `  - ${issue.path.join('.') || '(root)'}: ${issue.message}`)
+    .join('\n');
+  throw new Error(`Invalid environment configuration:\n${details}`);
+}
+
+export const env = parsedEnv.data;
+
+export const apiKeys = splitList(env.API_KEYS);
+export const corsOrigins = splitList(env.CORS_ORIGINS);
+export const browserInteractiveEnabled =
+  env.BROWSER_INTERACTIVE_ENABLED ?? env.NODE_ENV !== 'production';
+
+export function splitList(value: string | undefined): string[] {
+  return (value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
 
 function loadEnv(): void {
   const cwd = process.cwd();

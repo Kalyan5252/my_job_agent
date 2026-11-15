@@ -1,0 +1,188 @@
+/sessions:
+  get:
+    tags: [Sessions]
+    summary: List LinkedIn/Google session status
+    operationId: listSessions
+    responses:
+      "200":
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                items: { type: array, items: { $ref: "../components/schemas.yaml#/SessionStatus" } }
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized
+      "500":
+        $ref: ../components/errors.yaml#/InternalServerError
+/sessions/{provider}:
+  get:
+    tags: [Sessions]
+    summary: Session status
+    operationId: getSession
+    parameters:
+      - name: provider
+        in: path
+        required: true
+        description: Session provider
+        schema: { type: string, enum: [linkedin, google] }
+    responses:
+      "200":
+        description: OK
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/SessionStatus
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized
+      "404":
+        $ref: ../components/errors.yaml#/NotFound
+  put:
+    tags: [Sessions]
+    summary: Upload a Playwright storage state (stored encrypted)
+    operationId: putSession
+    parameters:
+      - name: provider
+        in: path
+        required: true
+        description: Session provider
+        schema: { type: string, enum: [linkedin, google] }
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas.yaml#/StorageState
+    responses:
+      "200":
+        description: OK
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/SessionStatus
+      "400":
+        $ref: ../components/errors.yaml#/BadRequest
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized
+      "404":
+        $ref: ../components/errors.yaml#/NotFound
+  delete:
+    tags: [Sessions]
+    summary: Delete the saved session
+    operationId: deleteSession
+    parameters:
+      - name: provider
+        in: path
+        required: true
+        description: Session provider
+        schema: { type: string, enum: [linkedin, google] }
+    responses:
+      "200":
+        description: Deleted
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized
+      "404":
+        $ref: ../components/errors.yaml#/NotFound
+/sessions/{provider}/verify:
+  post:
+    tags: [Sessions]
+    summary: Open the provider headlessly with the saved session and check it is still signed in
+    operationId: verifySession
+    parameters:
+      - name: provider
+        in: path
+        required: true
+        description: Session provider
+        schema: { type: string, enum: [linkedin, google] }
+    responses:
+      "200":
+        description: OK
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/SessionVerifyResult
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized
+      "404":
+        $ref: ../components/errors.yaml#/NotFound
+      "429":
+        $ref: ../components/errors.yaml#/TooManyRequests
+/sessions/{provider}/login:
+  post:
+    tags: [Sessions]
+    summary: Start an interactive login (opens a visible browser on the API host; local use only)
+    operationId: startSessionLogin
+    parameters:
+      - name: provider
+        in: path
+        required: true
+        description: Session provider
+        schema: { type: string, enum: [linkedin, google] }
+    responses:
+      "200":
+        description: OK
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/LoginAttempt
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized
+      "404":
+        $ref: ../components/errors.yaml#/NotFound
+      "409":
+        description: Interactive login disabled on this host
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/ErrorResponse
+/sessions/{provider}/login/{loginId}/complete:
+  post:
+    tags: [Sessions]
+    summary: Save the session from an interactive login
+    operationId: completeSessionLogin
+    parameters:
+      - name: provider
+        in: path
+        required: true
+        description: Session provider
+        schema: { type: string, enum: [linkedin, google] }
+      - name: loginId
+        in: path
+        required: true
+        description: Id from POST /sessions/{provider}/login
+        schema: { type: string }
+    responses:
+      "200":
+        description: OK
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/SessionStatus
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized
+      "404":
+        $ref: ../components/errors.yaml#/NotFound
+/sessions/{provider}/login/{loginId}:
+  delete:
+    tags: [Sessions]
+    summary: Cancel an interactive login
+    operationId: cancelSessionLogin
+    parameters:
+      - name: provider
+        in: path
+        required: true
+        description: Session provider
+        schema: { type: string, enum: [linkedin, google] }
+      - name: loginId
+        in: path
+        required: true
+        description: Login attempt id
+        schema: { type: string }
+    responses:
+      "200":
+        description: Cancelled
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized
+      "404":
+        $ref: ../components/errors.yaml#/NotFound

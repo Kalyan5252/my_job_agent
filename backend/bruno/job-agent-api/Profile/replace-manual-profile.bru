@@ -1,0 +1,60 @@
+meta {
+  name: Replace manual profile
+  type: http
+  seq: 8
+}
+
+put {
+  url: {{baseUrl}}/profile/manual
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "legalName": "Jane Doe",
+    "name": "Jane Doe",
+    "preferredName": "Jane",
+    "emails": [
+      "jane.doe@example.com"
+    ],
+    "phones": [
+      "+91 90000 00000"
+    ],
+    "skills": [
+      "TypeScript",
+      "Node.js",
+      "PostgreSQL"
+    ],
+    "address": {
+      "city": "Bengaluru",
+      "state": "Karnataka",
+      "country": "India",
+      "postalCode": "560001",
+      "full": "Bengaluru, Karnataka, India"
+    },
+    "profiles": {
+      "linkedin": "janedoe",
+      "github": "janedoe",
+      "leetcode": "janedoe"
+    },
+    "education": {
+      "university": "Example University",
+      "degree": "B.Tech Computer Science",
+      "start": "2020",
+      "end": "2024"
+    },
+    "preferences": {
+      "noticePeriodDays": 0,
+      "canJoinImmediately": true,
+      "hasNonCompete": false,
+      "visaSponsorshipRequiredInIndia": false,
+      "currentSalaryLpa": "N/A",
+      "expectedSalaryLpa": 12,
+      "skillYears": {
+        "TypeScript": 1.5,
+        "Node.js": 1.5
+      }
+    }
+  }
+}

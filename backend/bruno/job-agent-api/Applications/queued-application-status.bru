@@ -1,0 +1,11 @@
+meta {
+  name: Queued application status
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/workflows/application/jobs/{{queuedJobId}}
+  body: none
+  auth: inherit
+}

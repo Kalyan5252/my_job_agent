@@ -1,0 +1,98 @@
+# Production-style stack: API + workers + cron + MongoDB + Postgres + Redis.
+#   cp backend/.env.example backend/.env   # fill in secrets (bun run auth:hash-password --secrets)
+#   docker compose up -d --build
+services:
+  api:
+    build: { context: ., dockerfile: backend/Dockerfile }
+    env_file: backend/.env
+    environment: &runtime
+      NODE_ENV: production
+      DATA_DIR: /data
+      MONGODB_URI: mongodb://mongo:27017
+      POSTGRES_URL: postgres://jobagent:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/job_agent
+      POSTGRES_SSL_MODE: disable
+      REDIS_ENABLED: 'true'
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD}
+    ports: ['127.0.0.1:3000:3000']
+    volumes: [jobdata:/data]
+    depends_on:
+      mongo: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    restart: unless-stopped
+
+  discovery-worker:
+    build: { context: ., dockerfile: backend/Dockerfile }
+    env_file: backend/.env
+    environment: *runtime
+    command: ['bun', 'src/queues/discovery.worker.main.ts']
+    volumes: [jobdata:/data]
+    depends_on: [api]
+    restart: unless-stopped
+
+  apply-worker:
+    build: { context: ., dockerfile: backend/Dockerfile }
+    env_file: backend/.env
+    environment: *runtime
+    command: ['bun', 'src/queues/worker.ts']
+    volumes: [jobdata:/data]
+    shm_size: 1gb
+    depends_on: [api]
+    restart: unless-stopped
+
+  cron:
+    build: { context: ., dockerfile: backend/Dockerfile }
+    env_file: backend/.env
+    environment: *runtime
+    command: ['bun', 'scripts/cronJobs.ts']
+    volumes: [jobdata:/data]
+    depends_on: [api]
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:7.0
+    volumes: [mongodata:/data/db]
+    healthcheck:
+      test: ['CMD', 'mongosh', '--quiet', '--eval', "db.adminCommand('ping')"]
+      interval: 10s
+      retries: 10
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: jobagent
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: job_agent
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U jobagent -d job_agent']
+      interval: 10s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command:
+      [
+        'redis-server',
+        '--requirepass',
+        '${REDIS_PASSWORD:?set REDIS_PASSWORD}',
+        '--appendonly',
+        'yes',
+      ]
+    volumes: [redisdata:/data]
+    healthcheck:
+      test: ['CMD-SHELL', 'redis-cli -a "$$REDIS_PASSWORD" ping | grep PONG']
+      interval: 10s
+      retries: 10
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD}
+    restart: unless-stopped
+
+volumes:
+  jobdata:
+  mongodata:
+  pgdata:
+  redisdata:

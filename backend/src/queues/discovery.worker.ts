@@ -89,8 +89,3 @@ function attachLogging<T>(name: string, worker: Worker<T>): void {
     console.error(`[discovery-worker:${name}] failed ${job?.id}`, err);
   });
 }
-
-if (require.main === module) {
-  startDiscoveryWorkers();
-  console.log('Discovery workers started');
-}

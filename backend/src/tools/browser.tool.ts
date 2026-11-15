@@ -9,7 +9,9 @@ import {
   type Locator,
   type Page,
 } from 'playwright';
-import { env } from '../config/env';
+import { browserInteractiveEnabled, env } from '../config/env';
+import { paths, resolveFromCwd } from '../config/paths';
+import { SessionService } from '../services/session.service';
 import { FieldAnswer, FormField } from '../types';
 
 interface FillFormResult {
@@ -71,14 +73,23 @@ interface IdentityContext {
 
 export class BrowserTool {
   private static pooledBrowser: Browser | null = null;
+  private readonly sessions = new SessionService();
+
+  static async closePool(): Promise<void> {
+    const browser = BrowserTool.pooledBrowser;
+    BrowserTool.pooledBrowser = null;
+    await browser?.close().catch(() => undefined);
+  }
 
   async withPage<T>(
     url: string,
     action: (page: Page) => Promise<T>,
     options: PageRunOptions = {},
   ): Promise<T> {
-    const preview = options.preview ?? false;
-    const requiresInteractiveBrowser = preview || Boolean(options.captchaHandoff);
+    // Headed browsers need a display; never launch them on headless servers.
+    const preview = browserInteractiveEnabled && (options.preview ?? false);
+    const requiresInteractiveBrowser =
+      browserInteractiveEnabled && (preview || Boolean(options.captchaHandoff));
     const browser = requiresInteractiveBrowser
       ? await this.launchIsolatedBrowser({
           headless: false,
@@ -124,13 +135,15 @@ export class BrowserTool {
 
   private async launchIsolatedBrowser(options: LaunchOptions): Promise<Browser> {
     try {
-      return await chromium.launch(options);
+      return await chromium.launch({ channel: env.BROWSER_CHANNEL || undefined, ...options });
     } catch (error) {
       try {
         console.warn('Chromium launch failed, falling back to Firefox. Original error:', error);
         return await firefox.launch(options);
       } catch {
-        throw new Error(`Failed to launch both Chromium and Firefox browsers. Original error: ${error}`);
+        throw new Error(
+          `Failed to launch both Chromium and Firefox browsers. Original error: ${error}`,
+        );
       }
     }
   }
@@ -221,7 +234,7 @@ export class BrowserTool {
           return {
             code: 'LINKEDIN_AUTH_NOT_CONFIGURED',
             reason: 'LinkedIn authenticated session not configured',
-            hint: 'Run `npm run auth:linkedin` once, then retry.',
+            hint: 'Run POST /sessions/linkedin/login (or `bun run session linkedin`) once, then retry.',
           };
         }
 
@@ -229,7 +242,7 @@ export class BrowserTool {
           return {
             code: 'LINKEDIN_SESSION_EXPIRED',
             reason: 'LinkedIn login required before accessing application form',
-            hint: 'Refresh LinkedIn session via `npm run auth:linkedin` and retry.',
+            hint: 'Refresh LinkedIn session via POST /sessions/linkedin/login (or `bun run session linkedin`) and retry.',
           };
         }
 
@@ -238,21 +251,21 @@ export class BrowserTool {
           return {
             code: 'GOOGLE_AUTH_NOT_CONFIGURED',
             reason: 'Google authenticated session not configured',
-            hint: 'Run `npm run auth:google` once, then retry.',
+            hint: 'Run POST /sessions/google/login (or `bun run session google`) once, then retry.',
           };
         }
         if (googleAuth && hasSignInForm) {
           return {
             code: 'GOOGLE_SESSION_EXPIRED',
             reason: 'Google login required before accessing application form',
-            hint: 'Refresh Google session via `npm run auth:google` and retry.',
+            hint: 'Refresh Google session via POST /sessions/google/login (or `bun run session google`) and retry.',
           };
         }
         if (googleAuth) {
           return {
             code: 'GOOGLE_AUTH_REQUIRED',
             reason: 'Application flow requires Google sign-in',
-            hint: 'Use saved Google session or refresh it via `npm run auth:google`.',
+            hint: 'Use saved Google session or refresh it via POST /sessions/google/login (or `bun run session google`).',
           };
         }
 
@@ -594,13 +607,11 @@ export class BrowserTool {
   }
 
   hasLinkedInAuthState(): boolean {
-    if (!env.LINKEDIN_AUTH_ENABLED) return false;
-    return fs.existsSync(this.linkedinStorageStatePath());
+    return this.sessions.has('linkedin');
   }
 
   hasGoogleAuthState(): boolean {
-    if (!env.GOOGLE_AUTH_ENABLED) return false;
-    return fs.existsSync(this.googleStorageStatePath());
+    return this.sessions.has('google');
   }
 
   async detectLinkedInAuthState(url: string): Promise<'ok' | 'expired' | 'missing_auth'> {
@@ -1624,7 +1635,7 @@ export class BrowserTool {
 
   private async capturePreview(page: Page, label: string): Promise<string> {
     const ts = new Date().toISOString().replace(/[:.]/g, '-');
-    const dir = path.resolve(process.cwd(), '.preview');
+    const dir = paths.previewsDir();
     fs.mkdirSync(dir, { recursive: true });
     const file = path.join(dir, `${label}-${ts}.png`);
     await page.screenshot({ path: file, fullPage: true });
@@ -1636,22 +1647,19 @@ export class BrowserTool {
     if (useSecondary) {
       const profileSecondary = this.loadSecondaryIdentityData();
       if (profileSecondary.resumeFilePath) candidates.push(profileSecondary.resumeFilePath);
-      candidates.push(env.SECONDARY_RESUME_FILE_PATH);
+      candidates.push(paths.resumePdf('secondary'));
     } else {
       const profilePrimary = this.loadPrimaryIdentityData();
       if (profilePrimary.resumeFilePath) candidates.push(profilePrimary.resumeFilePath);
-      candidates.push(env.RESUME_FILE_PATH);
+      candidates.push(paths.resumePdf('primary'));
     }
 
     for (const candidate of candidates) {
-      const resolved = path.isAbsolute(candidate)
-        ? candidate
-        : path.resolve(process.cwd(), candidate);
+      const resolved = resolveFromCwd(candidate);
       if (fs.existsSync(resolved)) return resolved;
     }
 
-    const fallback = useSecondary ? env.SECONDARY_RESUME_FILE_PATH : env.RESUME_FILE_PATH;
-    return path.isAbsolute(fallback) ? fallback : path.resolve(process.cwd(), fallback);
+    return paths.resumePdf(useSecondary ? 'secondary' : 'primary');
   }
 
   private async attachResumeToInput(target: Locator, resumePath: string): Promise<boolean> {
@@ -1760,7 +1768,7 @@ export class BrowserTool {
       const secondary = this.loadSecondaryIdentityData();
       return {
         useSecondary: true,
-        email: secondary.email || env.SECONDARY_EMAIL,
+        email: env.SECONDARY_EMAIL || secondary.email || '',
         resumePath: this.resolveResumeFilePath(true),
         name: secondary.name,
         linkedin: secondary.linkedin,
@@ -1785,10 +1793,7 @@ export class BrowserTool {
     github?: string;
     resumeFilePath?: string;
   } {
-    const configured = env.SECONDARY_CANDIDATE_PROFILE_PATH;
-    const filePath = path.isAbsolute(configured)
-      ? configured
-      : path.resolve(process.cwd(), configured);
+    const filePath = paths.candidateProfile('secondary');
     if (!fs.existsSync(filePath)) return {};
 
     try {
@@ -1812,10 +1817,7 @@ export class BrowserTool {
     skills?: string[];
     skillYears?: Record<string, number>;
   } {
-    const configured = env.CANDIDATE_PROFILE_PATH;
-    const filePath = path.isAbsolute(configured)
-      ? configured
-      : path.resolve(process.cwd(), configured);
+    const filePath = paths.candidateProfile('primary');
     const fromCandidate: {
       resumeFilePath?: string;
       skills?: string[];
@@ -1840,9 +1842,7 @@ export class BrowserTool {
       }
     }
 
-    const manualPath = path.isAbsolute(env.MANUAL_PROFILE_PATH)
-      ? env.MANUAL_PROFILE_PATH
-      : path.resolve(process.cwd(), env.MANUAL_PROFILE_PATH);
+    const manualPath = paths.manualProfile();
     if (fs.existsSync(manualPath)) {
       try {
         const raw = fs.readFileSync(manualPath, 'utf8');
@@ -1868,9 +1868,7 @@ export class BrowserTool {
   } {
     const output: { email?: string; phone?: string } = {};
 
-    const candidatePath = path.isAbsolute(env.CANDIDATE_PROFILE_PATH)
-      ? env.CANDIDATE_PROFILE_PATH
-      : path.resolve(process.cwd(), env.CANDIDATE_PROFILE_PATH);
+    const candidatePath = paths.candidateProfile('primary');
     if (fs.existsSync(candidatePath)) {
       try {
         const raw = fs.readFileSync(candidatePath, 'utf8');
@@ -1882,9 +1880,7 @@ export class BrowserTool {
       }
     }
 
-    const manualPath = path.isAbsolute(env.MANUAL_PROFILE_PATH)
-      ? env.MANUAL_PROFILE_PATH
-      : path.resolve(process.cwd(), env.MANUAL_PROFILE_PATH);
+    const manualPath = paths.manualProfile();
     if (fs.existsSync(manualPath)) {
       try {
         const raw = fs.readFileSync(manualPath, 'utf8');
@@ -2017,12 +2013,12 @@ export class BrowserTool {
     }> = [];
 
     if (includeLinkedIn && this.shouldUseLinkedInAuth()) {
-      const linkedInState = this.readStorageStateFile(this.linkedinStorageStatePath());
+      const linkedInState = this.sessions.read('linkedin');
       if (linkedInState) states.push(linkedInState);
     }
 
     if (includeGoogle && this.hasGoogleAuthState()) {
-      const googleState = this.readStorageStateFile(this.googleStorageStatePath());
+      const googleState = this.sessions.read('google');
       if (googleState) states.push(googleState);
     }
 
@@ -2050,32 +2046,6 @@ export class BrowserTool {
 
     const lower = url.toLowerCase();
     return allowlist.some((domain) => lower.includes(domain));
-  }
-
-  private linkedinStorageStatePath(): string {
-    const configured = env.LINKEDIN_STORAGE_STATE_PATH;
-    return path.isAbsolute(configured) ? configured : path.resolve(process.cwd(), configured);
-  }
-
-  private googleStorageStatePath(): string {
-    const configured = env.GOOGLE_STORAGE_STATE_PATH;
-    return path.isAbsolute(configured) ? configured : path.resolve(process.cwd(), configured);
-  }
-
-  private readStorageStateFile(filePath: string): {
-    cookies: unknown[];
-    origins: Array<{ origin: string; localStorage: unknown[] }>;
-  } | null {
-    if (!fs.existsSync(filePath)) return null;
-    try {
-      const raw = fs.readFileSync(filePath, 'utf8');
-      return JSON.parse(raw) as {
-        cookies: unknown[];
-        origins: Array<{ origin: string; localStorage: unknown[] }>;
-      };
-    } catch {
-      return null;
-    }
   }
 
   private mergeStorageStates(

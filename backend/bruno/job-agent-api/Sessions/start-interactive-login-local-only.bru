@@ -1,0 +1,19 @@
+meta {
+  name: Start interactive login (local only)
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/sessions/linkedin/login
+  body: none
+  auth: inherit
+}
+
+script:post-response {
+  if (res.status === 200) bru.setEnvVar("loginId", res.body.loginId);
+}
+
+docs {
+  Opens a visible browser on the API machine. Only when BROWSER_INTERACTIVE_ENABLED=true (default in development).
+}

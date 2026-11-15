@@ -1,0 +1,11 @@
+meta {
+  name: Verify LinkedIn session
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/sessions/linkedin/verify
+  body: none
+  auth: inherit
+}

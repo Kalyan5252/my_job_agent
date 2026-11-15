@@ -1,3 +1,4 @@
+import { browserInteractiveEnabled } from '../config/env';
 import { pgPool } from '../db/postgres/client';
 import { LLMService } from '../services/llm.service';
 import { ResumeService } from '../services/resume.service';
@@ -19,10 +20,13 @@ export class ApplicationAgent {
     const authMode = options.authMode ?? 'auto';
     const hydratedProfile = this.resumeService.hydrateProfile(profile);
     const mode = options.mode ?? 'dry-run';
-    const captchaHandoff = options.captchaHandoff ?? mode === 'submit';
+    // CAPTCHA hand-off opens a visible browser; only possible where a display exists.
+    const captchaHandoff =
+      browserInteractiveEnabled && (options.captchaHandoff ?? mode === 'submit');
     const captchaHandoffTimeoutMs = options.captchaHandoffTimeoutMs ?? 180_000;
     const keepBrowserOpenAfterSubmit =
-      options.keepBrowserOpenAfterSubmit ?? (mode === 'submit' && Boolean(options.preview));
+      browserInteractiveEnabled &&
+      (options.keepBrowserOpenAfterSubmit ?? (mode === 'submit' && Boolean(options.preview)));
     const keepBrowserOpenMs = options.keepBrowserOpenMs ?? 180_000;
     this.log(
       `start job=${job.externalId} source=${job.source} mode=${mode} authMode=${authMode} captchaHandoff=${captchaHandoff} keepOpen=${keepBrowserOpenAfterSubmit}`,
@@ -180,7 +184,7 @@ export class ApplicationAgent {
         const linkedInAuthState = await this.browser.detectLinkedInAuthState(job.applyUrl);
         if (linkedInAuthState === 'missing_auth') {
           const reason = 'LinkedIn authenticated session missing';
-          const note = `${reason}. Run npm run auth:linkedin`;
+          const note = `${reason}. Save a session via POST /sessions/linkedin/login or PUT /sessions/linkedin`;
           await this.safeUpsertApplication(job, 'needs_human', note);
           return {
             status: 'needs_human',
@@ -192,7 +196,7 @@ export class ApplicationAgent {
         }
         if (linkedInAuthState === 'expired') {
           const reason = 'LinkedIn session expired';
-          const note = `${reason}. Refresh with npm run auth:linkedin`;
+          const note = `${reason}. Refresh via POST /sessions/linkedin/login or PUT /sessions/linkedin`;
           await this.safeUpsertApplication(job, 'needs_human', note);
           return {
             status: 'needs_human',
@@ -206,7 +210,7 @@ export class ApplicationAgent {
         const googleAuthState = await this.browser.detectGoogleAuthState(job.applyUrl, authMode);
         if (googleAuthState === 'missing_auth') {
           const reason = 'Google authenticated session missing';
-          const note = `${reason}. Run npm run auth:google`;
+          const note = `${reason}. Save a session via POST /sessions/google/login or PUT /sessions/google`;
           await this.safeUpsertApplication(job, 'needs_human', note);
           return {
             status: 'needs_human',
@@ -218,7 +222,7 @@ export class ApplicationAgent {
         }
         if (googleAuthState === 'expired') {
           const reason = 'Google session expired';
-          const note = `${reason}. Refresh with npm run auth:google`;
+          const note = `${reason}. Refresh via POST /sessions/google/login or PUT /sessions/google`;
           await this.safeUpsertApplication(job, 'needs_human', note);
           return {
             status: 'needs_human',
@@ -358,15 +362,30 @@ export class ApplicationAgent {
   ): Promise<void> {
     await pgPool.query(
       `
-      INSERT INTO applications (job_external_id, source, company, role, status, notes, applied_at, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+      INSERT INTO applications
+        (job_external_id, source, company, role, status, notes, apply_url, applied_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5::text, $6, $7, CASE WHEN $5::text = 'applied' THEN NOW() END, NOW())
       ON CONFLICT (source, job_external_id)
       DO UPDATE SET
         status = EXCLUDED.status,
         notes = EXCLUDED.notes,
+        apply_url = COALESCE(EXCLUDED.apply_url, applications.apply_url),
+        -- applied_at records the first real submission only.
+        applied_at = COALESCE(
+          applications.applied_at,
+          CASE WHEN EXCLUDED.status = 'applied' THEN NOW() END
+        ),
         updated_at = NOW();
       `,
-      [job.externalId, job.source, job.company, job.title, status, notes || null],
+      [
+        job.externalId,
+        job.source,
+        job.company,
+        job.title,
+        status,
+        notes || null,
+        job.applyUrl || null,
+      ],
     );
   }
 

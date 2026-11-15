@@ -40,19 +40,22 @@ test('all requested company career sources are configured', () => {
 
 test('Ashby provider normalizes company jobs', async () => {
   const source = config('OpenAI', 'ashby', 'openai');
-  const careerSource = new CompanyCareerSource([source], fakeFetch({
-    [`https://api.ashbyhq.com/posting-api/job-board/${source.boardToken}`]: {
-      jobs: [
-        {
-          id: 'ashby-1',
-          title: 'Software Engineer, Backend',
-          location: { name: 'San Francisco' },
-          applicationUrl: 'https://jobs.ashbyhq.com/openai/ashby-1/application',
-          descriptionPlain: 'Build distributed systems with TypeScript.',
-        },
-      ],
-    },
-  }));
+  const careerSource = new CompanyCareerSource(
+    [source],
+    fakeFetch({
+      [`https://api.ashbyhq.com/posting-api/job-board/${source.boardToken}`]: {
+        jobs: [
+          {
+            id: 'ashby-1',
+            title: 'Software Engineer, Backend',
+            location: { name: 'San Francisco' },
+            applicationUrl: 'https://jobs.ashbyhq.com/openai/ashby-1/application',
+            descriptionPlain: 'Build distributed systems with TypeScript.',
+          },
+        ],
+      },
+    }),
+  );
 
   const result = await careerSource.fetchJobs(query);
   assert.equal(result.jobs.length, 1);
@@ -64,19 +67,22 @@ test('Ashby provider normalizes company jobs', async () => {
 
 test('Greenhouse provider normalizes company jobs', async () => {
   const source = config('Datadog', 'greenhouse', 'datadog');
-  const careerSource = new CompanyCareerSource([source], fakeFetch({
-    [`https://boards-api.greenhouse.io/v1/boards/${source.boardToken}/jobs?content=true`]: {
-      jobs: [
-        {
-          id: 42,
-          title: 'Software Engineer - Platform',
-          absolute_url: 'https://job-boards.greenhouse.io/datadog/jobs/42',
-          location: { name: 'New York' },
-          content: '<p>TypeScript and distributed systems.</p>',
-        },
-      ],
-    },
-  }));
+  const careerSource = new CompanyCareerSource(
+    [source],
+    fakeFetch({
+      [`https://boards-api.greenhouse.io/v1/boards/${source.boardToken}/jobs?content=true`]: {
+        jobs: [
+          {
+            id: 42,
+            title: 'Software Engineer - Platform',
+            absolute_url: 'https://job-boards.greenhouse.io/datadog/jobs/42',
+            location: { name: 'New York' },
+            content: '<p>TypeScript and distributed systems.</p>',
+          },
+        ],
+      },
+    }),
+  );
 
   const result = await careerSource.fetchJobs(query);
   assert.equal(result.jobs.length, 1);
@@ -87,17 +93,20 @@ test('Greenhouse provider normalizes company jobs', async () => {
 
 test('Lever provider normalizes company jobs', async () => {
   const source = config('Example Lever', 'lever', 'example');
-  const careerSource = new CompanyCareerSource([source], fakeFetch({
-    [`https://api.lever.co/v0/postings/${source.boardToken}?mode=json`]: [
-      {
-        id: 'lever-1',
-        text: 'Backend Software Engineer',
-        hostedUrl: 'https://jobs.lever.co/example/lever-1',
-        categories: { location: 'Remote' },
-        descriptionPlain: 'Work on TypeScript services.',
-      },
-    ],
-  }));
+  const careerSource = new CompanyCareerSource(
+    [source],
+    fakeFetch({
+      [`https://api.lever.co/v0/postings/${source.boardToken}?mode=json`]: [
+        {
+          id: 'lever-1',
+          text: 'Backend Software Engineer',
+          hostedUrl: 'https://jobs.lever.co/example/lever-1',
+          categories: { location: 'Remote' },
+          descriptionPlain: 'Work on TypeScript services.',
+        },
+      ],
+    }),
+  );
 
   const result = await careerSource.fetchJobs(query);
   assert.equal(result.jobs.length, 1);
@@ -120,18 +129,21 @@ test('Workday provider normalizes company jobs', async () => {
     },
     enabled: true,
   };
-  const careerSource = new CompanyCareerSource([source], fakeFetch({
-    'https://nvidia.wd5.myworkdayjobs.com/wday/cxs/nvidia/NVIDIAExternalCareerSite/jobs': {
-      jobPostings: [
-        {
-          title: 'Software Engineer, Cloud Platform',
-          externalPath: '/NVIDIAExternalCareerSite/job/software-engineer',
-          locationsText: 'Santa Clara, CA',
-          bulletFields: ['Distributed systems', 'TypeScript'],
-        },
-      ],
-    },
-  }));
+  const careerSource = new CompanyCareerSource(
+    [source],
+    fakeFetch({
+      'https://nvidia.wd5.myworkdayjobs.com/wday/cxs/nvidia/NVIDIAExternalCareerSite/jobs': {
+        jobPostings: [
+          {
+            title: 'Software Engineer, Cloud Platform',
+            externalPath: '/NVIDIAExternalCareerSite/job/software-engineer',
+            locationsText: 'Santa Clara, CA',
+            bulletFields: ['Distributed systems', 'TypeScript'],
+          },
+        ],
+      },
+    }),
+  );
 
   const result = await careerSource.fetchJobs(query);
   assert.equal(result.jobs.length, 1);
@@ -143,10 +155,13 @@ test('Workday provider normalizes company jobs', async () => {
 
 test('custom HTML provider extracts relevant job links', async () => {
   const source = config('Amazon', 'custom-html');
-  const careerSource = new CompanyCareerSource([source], fakeFetch({
-    [source.careersUrl]:
-      '<html><body><a href="/en/jobs/123/software-engineer">Software Engineer, Backend</a></body></html>',
-  }));
+  const careerSource = new CompanyCareerSource(
+    [source],
+    fakeFetch({
+      [source.careersUrl]:
+        '<html><body><a href="/en/jobs/123/software-engineer">Software Engineer, Backend</a></body></html>',
+    }),
+  );
 
   const result = await careerSource.fetchJobs(query);
   assert.equal(result.jobs.length, 1);
@@ -156,20 +171,23 @@ test('custom HTML provider extracts relevant job links', async () => {
 
 test('SmartRecruiters provider normalizes company jobs', async () => {
   const source = config('Canva', 'smartrecruiters', 'Canva');
-  const careerSource = new CompanyCareerSource([source], fakeFetch({
-    [`https://api.smartrecruiters.com/v1/companies/${source.boardToken}/postings?limit=10&q=Software%20Engineer`]:
-      {
-        content: [
-          {
-            id: 'sr-1',
-            name: 'Software Engineer, Platform',
-            postingUrl: 'https://jobs.smartrecruiters.com/Canva/sr-1',
-            location: { fullLocation: 'Sydney, Australia' },
-            department: { label: 'Engineering' },
-          },
-        ],
-      },
-  }));
+  const careerSource = new CompanyCareerSource(
+    [source],
+    fakeFetch({
+      [`https://api.smartrecruiters.com/v1/companies/${source.boardToken}/postings?limit=10&q=Software%20Engineer`]:
+        {
+          content: [
+            {
+              id: 'sr-1',
+              name: 'Software Engineer, Platform',
+              postingUrl: 'https://jobs.smartrecruiters.com/Canva/sr-1',
+              location: { fullLocation: 'Sydney, Australia' },
+              department: { label: 'Engineering' },
+            },
+          ],
+        },
+    }),
+  );
 
   const result = await careerSource.fetchJobs(query);
   assert.equal(result.jobs.length, 1);
@@ -179,20 +197,23 @@ test('SmartRecruiters provider normalizes company jobs', async () => {
 
 test('Amazon Jobs provider normalizes company jobs', async () => {
   const source = config('Amazon', 'amazon-jobs');
-  const careerSource = new CompanyCareerSource([source], fakeFetch({
-    'https://www.amazon.jobs/en/search.json?offset=0&result_limit=10&sort=relevant&base_query=Software%20Engineer':
-      {
-        jobs: [
-          {
-            id: 'amzn-1',
-            title: 'Software Development Engineer',
-            job_path: '/en/jobs/amzn-1/software-development-engineer',
-            location: 'Seattle, WA',
-            basic_qualifications: 'TypeScript distributed systems',
-          },
-        ],
-      },
-  }));
+  const careerSource = new CompanyCareerSource(
+    [source],
+    fakeFetch({
+      'https://www.amazon.jobs/en/search.json?offset=0&result_limit=10&sort=relevant&base_query=Software%20Engineer':
+        {
+          jobs: [
+            {
+              id: 'amzn-1',
+              title: 'Software Development Engineer',
+              job_path: '/en/jobs/amzn-1/software-development-engineer',
+              location: 'Seattle, WA',
+              basic_qualifications: 'TypeScript distributed systems',
+            },
+          ],
+        },
+    }),
+  );
 
   const result = await careerSource.fetchJobs(query);
   assert.equal(result.jobs.length, 1);
@@ -213,23 +234,26 @@ test('Oracle Cloud provider normalizes company jobs', async () => {
     },
     enabled: true,
   };
-  const careerSource = new CompanyCareerSource([source], fakeFetch({
-    'https://eeho.fa.us2.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList&finder=findReqs;siteNumber=CX_45001,keyword=Software%20Engineer,limit=10':
-      {
-        items: [
-          {
-            requisitionList: [
-              {
-                Id: '337447',
-                Title: 'Software Developer 3',
-                PrimaryLocation: 'India',
-                ShortDescription: 'Distributed systems engineering',
-              },
-            ],
-          },
-        ],
-      },
-  }));
+  const careerSource = new CompanyCareerSource(
+    [source],
+    fakeFetch({
+      'https://eeho.fa.us2.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList&finder=findReqs;siteNumber=CX_45001,keyword=Software%20Engineer,limit=10':
+        {
+          items: [
+            {
+              requisitionList: [
+                {
+                  Id: '337447',
+                  Title: 'Software Developer 3',
+                  PrimaryLocation: 'India',
+                  ShortDescription: 'Distributed systems engineering',
+                },
+              ],
+            },
+          ],
+        },
+    }),
+  );
 
   const result = await careerSource.fetchJobs(query);
   assert.equal(result.jobs.length, 1);
@@ -305,17 +329,16 @@ function fixtureFor(source: CompanyCareerSourceConfig): Record<string, unknown> 
 
   if (source.provider === 'workday' && source.workday) {
     return {
-      [`${source.workday.baseUrl}/wday/cxs/${source.workday.tenant}/${source.workday.site}/jobs`]:
-        {
-          jobPostings: [
-            {
-              title: 'Software Engineer',
-              externalPath: `/${source.workday.site}/job/software-engineer`,
-              locationsText: 'Remote',
-              bulletFields: ['TypeScript distributed systems'],
-            },
-          ],
-        },
+      [`${source.workday.baseUrl}/wday/cxs/${source.workday.tenant}/${source.workday.site}/jobs`]: {
+        jobPostings: [
+          {
+            title: 'Software Engineer',
+            externalPath: `/${source.workday.site}/job/software-engineer`,
+            locationsText: 'Remote',
+            bulletFields: ['TypeScript distributed systems'],
+          },
+        ],
+      },
     };
   }
 

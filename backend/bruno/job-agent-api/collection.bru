@@ -1,0 +1,12 @@
+auth {
+  mode: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+docs {
+  All requests inherit `Authorization: Bearer {{token}}`.
+  Run "Auth / Login" first (it stores the token), or set `token` to an API key from API_KEYS.
+}

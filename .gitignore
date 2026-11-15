@@ -4,10 +4,22 @@ backend/dist
 frontend/.next
 frontend/out
 frontend/tsconfig.tsbuildinfo
-.env
 .DS_Store
 playwright-report
+
+# Secrets / environment
+.env
 .env.*
-.preview/*
-backend/.preview/*
-backend/data/exports/*.xlsx
+!.env.example
+!**/.env.example
+
+# Runtime data: resumes, profiles, login sessions, screenshots, exports.
+# Never commit these; they contain personal data and live login cookies.
+backend/data/*
+!backend/data/examples/
+.auth/
+**/.auth/
+.preview/
+**/.preview/
+backend/responses/
+*.storage-state.json

@@ -1,0 +1,11 @@
+meta {
+  name: Review screenshot
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/manual-reviews/{{reviewId}}/screenshot
+  body: none
+  auth: inherit
+}

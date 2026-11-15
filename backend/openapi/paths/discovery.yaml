@@ -118,3 +118,55 @@
         $ref: ../components/errors.yaml#/NotFound
       "500":
         $ref: ../components/errors.yaml#/InternalServerError
+/workflows/discovery/schedule:
+  post:
+    tags: [Discovery]
+    summary: Queue a discovery run (requires Redis)
+    operationId: scheduleDiscovery
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas.yaml#/DiscoveryRequest
+    responses:
+      "202":
+        description: OK
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/QueuedRun
+      "400":
+        $ref: ../components/errors.yaml#/BadRequest
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized
+      "409":
+        description: Redis disabled
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/ErrorResponse
+      "500":
+        $ref: ../components/errors.yaml#/InternalServerError
+/workflows/discovery/runs/{runId}:
+  get:
+    tags: [Discovery]
+    summary: Status of a discovery run
+    operationId: getDiscoveryRun
+    parameters:
+      - name: runId
+        in: path
+        required: true
+        description: Run id returned by run/schedule
+        schema: { type: string }
+    responses:
+      "200":
+        description: OK
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/DiscoveryRunStatus
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized
+      "500":
+        $ref: ../components/errors.yaml#/InternalServerError

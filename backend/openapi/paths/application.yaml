@@ -30,3 +30,96 @@
         $ref: ../components/errors.yaml#/NotFound
       "500":
         $ref: ../components/errors.yaml#/InternalServerError
+/workflows/application/schedule:
+  post:
+    tags: [Application]
+    summary: Queue an application (requires Redis)
+    operationId: scheduleApplication
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas.yaml#/ApplicationRunRequest
+    responses:
+      "202":
+        description: OK
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/QueuedApplication
+      "400":
+        $ref: ../components/errors.yaml#/BadRequest
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized
+      "409":
+        description: Redis disabled
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/ErrorResponse
+/workflows/application/jobs/{jobId}:
+  get:
+    tags: [Application]
+    summary: Status/result of a queued application
+    operationId: getApplicationJob
+    parameters:
+      - name: jobId
+        in: path
+        required: true
+        description: Job id from the schedule call
+        schema: { type: string }
+    responses:
+      "200":
+        description: OK
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/ApplicationJobStatus
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized
+      "404":
+        $ref: ../components/errors.yaml#/NotFound
+      "409":
+        description: Redis disabled
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/ErrorResponse
+/applications:
+  get:
+    tags: [Application]
+    summary: List application records
+    operationId: listApplications
+    parameters:
+      - name: status
+        in: query
+        required: false
+        description: Filter by status
+        schema: { type: string }
+      - name: company
+        in: query
+        required: false
+        description: Company (contains)
+        schema: { type: string }
+      - name: limit
+        in: query
+        required: false
+        description: Page size
+        schema: { type: integer, default: 100 }
+      - name: offset
+        in: query
+        required: false
+        description: Offset
+        schema: { type: integer, default: 0 }
+    responses:
+      "200":
+        description: OK
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/ApplicationList
+      "400":
+        $ref: ../components/errors.yaml#/BadRequest
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized

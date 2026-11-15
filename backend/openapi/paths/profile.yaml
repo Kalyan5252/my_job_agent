@@ -1,25 +1,217 @@
-/profile/candidate:
+/profile:
   get:
-    tags:
-      - Profile
-    summary: Get hydrated candidate profile
-    operationId: getCandidateProfile
-    parameters:
-      - $ref: ../components/headers.yaml#/AcceptJson
+    tags: [Profile]
+    summary: Profile overview (search profile, resumes, manual profile, readiness)
+    operationId: getProfile
     responses:
       "200":
-        description: Candidate profile and resume metadata
+        description: OK
         content:
           application/json:
             schema:
-              $ref: ../components/schemas.yaml#/CandidateProfileResponse
+              $ref: ../components/schemas.yaml#/ProfileOverview
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized
+      "500":
+        $ref: ../components/errors.yaml#/InternalServerError
+/profile/resume:
+  post:
+    tags: [Profile]
+    summary: Upload a resume PDF and (re)build the candidate profile
+    operationId: uploadResume
+    parameters:
+      - name: identity
+        in: query
+        required: false
+        description: Which resume identity (secondary = used for Google-sign-in applications)
+        schema: { type: string, enum: [primary, secondary], default: primary }
+      - name: keepEdits
+        in: query
+        required: false
+        description: Keep fields you edited via PATCH /profile/candidate
+        schema: { type: string, enum: [true, false] }
+    requestBody:
+      required: true
+      description: The resume PDF, either as multipart field `file` or as the raw request body.
+      content:
+        multipart/form-data:
+          schema:
+            type: object
+            required: [file]
+            properties:
+              file: { type: string, format: binary }
+        application/pdf:
+          schema: { type: string, format: binary }
+    responses:
+      "200":
+        description: OK
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/ResumeImportResult
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized
+      "413":
+        description: File too large
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/ErrorResponse
+      "415":
+        description: Not a PDF
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/ErrorResponse
+      "422":
+        description: PDF could not be read
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/ErrorResponse
+      "500":
+        $ref: ../components/errors.yaml#/InternalServerError
+  get:
+    tags: [Profile]
+    summary: Download the stored resume PDF
+    operationId: downloadResume
+    parameters:
+      - name: identity
+        in: query
+        required: false
+        description: Which resume identity (secondary = used for Google-sign-in applications)
+        schema: { type: string, enum: [primary, secondary], default: primary }
+    responses:
+      "200":
+        description: OK
+        content:
+          application/pdf:
+            schema: { type: string, format: binary }
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized
+      "404":
+        $ref: ../components/errors.yaml#/NotFound
+  delete:
+    tags: [Profile]
+    summary: Delete the resume, its extracted text and candidate profile
+    operationId: deleteResume
+    parameters:
+      - name: identity
+        in: query
+        required: false
+        description: Which resume identity (secondary = used for Google-sign-in applications)
+        schema: { type: string, enum: [primary, secondary], default: primary }
+    responses:
+      "200":
+        description: Deleted
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized
+      "404":
+        $ref: ../components/errors.yaml#/NotFound
+/profile/candidate:
+  get:
+    tags: [Profile]
+    summary: Get the candidate profile extracted from the resume
+    operationId: getCandidate
+    parameters:
+      - name: identity
+        in: query
+        required: false
+        description: Which resume identity (secondary = used for Google-sign-in applications)
+        schema: { type: string, enum: [primary, secondary], default: primary }
+    responses:
+      "200":
+        description: OK
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/CandidateProfile
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized
+      "404":
+        $ref: ../components/errors.yaml#/NotFound
+  patch:
+    tags: [Profile]
+    summary: Correct/extend the extracted candidate profile (merge)
+    operationId: patchCandidate
+    parameters:
+      - name: identity
+        in: query
+        required: false
+        description: Which resume identity (secondary = used for Google-sign-in applications)
+        schema: { type: string, enum: [primary, secondary], default: primary }
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas.yaml#/CandidateProfile
+    responses:
+      "200":
+        description: OK
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/CandidateProfile
       "400":
         $ref: ../components/errors.yaml#/BadRequest
       "401":
         $ref: ../components/errors.yaml#/Unauthorized
-      "429":
-        $ref: ../components/errors.yaml#/TooManyRequests
-      "404":
-        $ref: ../components/errors.yaml#/NotFound
+/profile/manual:
+  get:
+    tags: [Profile]
+    summary: Get the manual profile
+    operationId: getManualProfile
+    responses:
+      "200":
+        description: OK
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/ManualProfile
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized
       "500":
         $ref: ../components/errors.yaml#/InternalServerError
+  put:
+    tags: [Profile]
+    summary: Replace the manual profile
+    operationId: putManualProfile
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas.yaml#/ManualProfile
+    responses:
+      "200":
+        description: OK
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/ManualProfile
+      "400":
+        $ref: ../components/errors.yaml#/BadRequest
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized
+  patch:
+    tags: [Profile]
+    summary: Merge into the manual profile (nested objects merged one level deep)
+    operationId: patchManualProfile
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas.yaml#/ManualProfile
+    responses:
+      "200":
+        description: OK
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/ManualProfile
+      "400":
+        $ref: ../components/errors.yaml#/BadRequest
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized

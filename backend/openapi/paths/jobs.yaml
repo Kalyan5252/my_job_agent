@@ -1,0 +1,131 @@
+/jobs:
+  get:
+    tags: [Jobs]
+    summary: List discovered jobs
+    operationId: listJobs
+    parameters:
+      - name: runId
+        in: query
+        required: false
+        description: Only jobs from this discovery run
+        schema: { type: string }
+      - name: apply
+        in: query
+        required: false
+        description: Filter on the apply recommendation
+        schema: { type: string, enum: [true, false] }
+      - name: minScore
+        in: query
+        required: false
+        description: Minimum score
+        schema: { type: number }
+      - name: source
+        in: query
+        required: false
+        description: Source name
+        schema: { type: string }
+      - name: company
+        in: query
+        required: false
+        description: Company (case-insensitive contains)
+        schema: { type: string }
+      - name: q
+        in: query
+        required: false
+        description: Search title/company/description
+        schema: { type: string }
+      - name: sort
+        in: query
+        required: false
+        description: Sort order
+        schema: { type: string, enum: [score, recent], default: score }
+      - name: limit
+        in: query
+        required: false
+        description: Page size (max 200)
+        schema: { type: integer, default: 50 }
+      - name: offset
+        in: query
+        required: false
+        description: Offset
+        schema: { type: integer, default: 0 }
+    responses:
+      "200":
+        description: OK
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/JobList
+      "400":
+        $ref: ../components/errors.yaml#/BadRequest
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized
+/jobs/{id}:
+  get:
+    tags: [Jobs]
+    summary: Get one discovered job
+    operationId: getJob
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Job id from GET /jobs
+        schema: { type: string }
+    responses:
+      "200":
+        description: OK
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/StoredJob
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized
+      "404":
+        $ref: ../components/errors.yaml#/NotFound
+/jobs/{id}/apply:
+  post:
+    tags: [Jobs]
+    summary: Run the application workflow for a stored job
+    operationId: applyToJob
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Job id from GET /jobs
+        schema: { type: string }
+      - name: async
+        in: query
+        required: false
+        description: Queue instead of running inline (requires Redis); returns 202
+        schema: { type: string, enum: [true, false] }
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas.yaml#/ApplyStoredJobRequest
+    responses:
+      "200":
+        description: OK
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/ApplicationRunResponse
+      "400":
+        $ref: ../components/errors.yaml#/BadRequest
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized
+      "404":
+        $ref: ../components/errors.yaml#/NotFound
+      "409":
+        description: Redis disabled (async)
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/ErrorResponse
+      "422":
+        description: Job has no apply URL
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/ErrorResponse

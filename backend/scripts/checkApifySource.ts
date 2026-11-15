@@ -3,7 +3,9 @@ import { ApifySource } from '../src/sources/apify.source';
 async function main() {
   const source = new ApifySource();
   if (!source.isEnabled()) {
-    console.log('SKIPPED Apify source check: set APIFY_ENABLED=true, APIFY_TOKEN, and APIFY_ACTORS.');
+    console.log(
+      'SKIPPED Apify source check: set APIFY_ENABLED=true, APIFY_TOKEN, and APIFY_ACTORS.',
+    );
     return;
   }
 

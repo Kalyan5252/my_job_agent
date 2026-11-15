@@ -1,0 +1,11 @@
+meta {
+  name: Complete interactive login
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/sessions/linkedin/login/{{loginId}}/complete
+  body: none
+  auth: inherit
+}

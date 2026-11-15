@@ -1,7 +1,4 @@
-import {
-  COMPANY_CAREER_SOURCES,
-  CompanyCareerSourceConfig,
-} from '../config/companySources';
+import { COMPANY_CAREER_SOURCES, CompanyCareerSourceConfig } from '../config/companySources';
 import { env } from '../config/env';
 import { JobPosting, JobSearchQuery } from '../types';
 
@@ -112,8 +109,14 @@ export class CompanyCareerSource {
       title: job.title || 'Untitled role',
       company: source.company,
       location: locationName(job.location) || 'Not specified',
-      description: cleanText(job.descriptionPlain || job.descriptionHtml || `${job.title || ''} ${fieldName(job.department)} ${fieldName(job.team)}`),
-      requirements: inferRequirements(`${job.title || ''} ${job.descriptionPlain || job.descriptionHtml || ''}`),
+      description: cleanText(
+        job.descriptionPlain ||
+          job.descriptionHtml ||
+          `${job.title || ''} ${fieldName(job.department)} ${fieldName(job.team)}`,
+      ),
+      requirements: inferRequirements(
+        `${job.title || ''} ${job.descriptionPlain || job.descriptionHtml || ''}`,
+      ),
       applyUrl: job.applicationUrl || job.jobUrl || source.careersUrl,
       rawData: { provider: 'ashby', job },
     }));
@@ -130,9 +133,7 @@ export class CompanyCareerSource {
         content?: string;
         departments?: Array<{ name?: string }>;
       }>;
-    }>(
-      `https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(board)}/jobs?content=true`,
-    );
+    }>(`https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(board)}/jobs?content=true`);
 
     return (data.jobs || []).map((job) => ({
       source: source.source,
@@ -140,7 +141,10 @@ export class CompanyCareerSource {
       title: job.title || 'Untitled role',
       company: source.company,
       location: job.location?.name || 'Not specified',
-      description: cleanText(job.content || `${job.title || ''} ${(job.departments || []).map((department) => department.name).join(' ')}`),
+      description: cleanText(
+        job.content ||
+          `${job.title || ''} ${(job.departments || []).map((department) => department.name).join(' ')}`,
+      ),
       requirements: inferRequirements(`${job.title || ''} ${job.content || ''}`),
       applyUrl: job.absolute_url || source.careersUrl,
       rawData: { provider: 'greenhouse', job },
@@ -176,7 +180,9 @@ export class CompanyCareerSource {
         company: source.company,
         location: job.categories?.location || 'Not specified',
         description: cleanText(`${job.descriptionPlain || ''} ${listText}`),
-        requirements: inferRequirements(`${job.text || ''} ${job.descriptionPlain || ''} ${listText}`),
+        requirements: inferRequirements(
+          `${job.text || ''} ${job.descriptionPlain || ''} ${listText}`,
+        ),
         applyUrl: job.applyUrl || job.hostedUrl || source.careersUrl,
         rawData: { provider: 'lever', job },
       };
@@ -252,8 +258,12 @@ export class CompanyCareerSource {
         job.location?.fullLocation ||
         [job.location?.city, job.location?.country].filter(Boolean).join(', ') ||
         (job.location?.remote ? 'Remote' : 'Not specified'),
-      description: cleanText(`${job.name || ''} ${job.department?.label || ''} ${job.industry?.label || ''}`),
-      requirements: inferRequirements(`${job.name || ''} ${job.department?.label || ''} ${job.industry?.label || ''}`),
+      description: cleanText(
+        `${job.name || ''} ${job.department?.label || ''} ${job.industry?.label || ''}`,
+      ),
+      requirements: inferRequirements(
+        `${job.name || ''} ${job.department?.label || ''} ${job.industry?.label || ''}`,
+      ),
       applyUrl: job.postingUrl || `${source.careersUrl}?search=${encodeURIComponent(query.role)}`,
       rawData: { provider: 'smartrecruiters', job },
     }));
@@ -283,9 +293,15 @@ export class CompanyCareerSource {
       title: job.title || 'Untitled role',
       company: source.company,
       location: job.location || 'Not specified',
-      description: cleanText(`${job.description || ''} ${job.basic_qualifications || ''} ${job.preferred_qualifications || ''}`),
-      requirements: inferRequirements(`${job.title || ''} ${job.basic_qualifications || ''} ${job.preferred_qualifications || ''}`),
-      applyUrl: job.job_path ? new URL(job.job_path, 'https://www.amazon.jobs').toString() : source.careersUrl,
+      description: cleanText(
+        `${job.description || ''} ${job.basic_qualifications || ''} ${job.preferred_qualifications || ''}`,
+      ),
+      requirements: inferRequirements(
+        `${job.title || ''} ${job.basic_qualifications || ''} ${job.preferred_qualifications || ''}`,
+      ),
+      applyUrl: job.job_path
+        ? new URL(job.job_path, 'https://www.amazon.jobs').toString()
+        : source.careersUrl,
       rawData: { provider: 'amazon-jobs', job },
     }));
   }
@@ -316,8 +332,12 @@ export class CompanyCareerSource {
       title: job.Title || 'Untitled role',
       company: source.company,
       location: job.PrimaryLocation || 'Not specified',
-      description: cleanText(`${job.Title || ''} ${job.ShortDescription || ''} ${job.JobFunction || ''}`),
-      requirements: inferRequirements(`${job.Title || ''} ${job.ShortDescription || ''} ${job.JobFunction || ''}`),
+      description: cleanText(
+        `${job.Title || ''} ${job.ShortDescription || ''} ${job.JobFunction || ''}`,
+      ),
+      requirements: inferRequirements(
+        `${job.Title || ''} ${job.ShortDescription || ''} ${job.JobFunction || ''}`,
+      ),
       applyUrl: `${source.careersUrl}#/en/sites/jobsearch/job/${job.Id || ''}`,
       rawData: { provider: 'oracle-cloud', job },
     }));
@@ -343,12 +363,17 @@ export class CompanyCareerSource {
   }
 
   private isRelevant(job: JobPosting, query: JobSearchQuery): boolean {
-    const text = `${job.title} ${job.description} ${(job.requirements || []).join(' ')}`.toLowerCase();
+    const text =
+      `${job.title} ${job.description} ${(job.requirements || []).join(' ')}`.toLowerCase();
     const roleTokens = tokenize(query.role).filter((token) => token.length >= 3);
     const skillTokens = (query.skills || []).flatMap(tokenize).filter((token) => token.length >= 3);
     const roleMatch = roleTokens.length === 0 || roleTokens.some((token) => text.includes(token));
-    const skillMatch = skillTokens.length === 0 || skillTokens.some((token) => text.includes(token));
-    const blocked = /(sales|account executive|legal|finance|recruiter|talent acquisition|marketing)/i.test(job.title);
+    const skillMatch =
+      skillTokens.length === 0 || skillTokens.some((token) => text.includes(token));
+    const blocked =
+      /(sales|account executive|legal|finance|recruiter|talent acquisition|marketing)/i.test(
+        job.title,
+      );
     return !blocked && (roleMatch || skillMatch);
   }
 
@@ -376,8 +401,7 @@ function withTimeout(init: RequestInit = {}): RequestInit {
     signal: init.signal ?? AbortSignal.timeout(15_000),
     headers: {
       accept: 'application/json,text/html;q=0.9,*/*;q=0.8',
-      'user-agent':
-        'Mozilla/5.0 (compatible; JobAgentBot/0.1; +https://example.local/job-agent)',
+      'user-agent': 'Mozilla/5.0 (compatible; JobAgentBot/0.1; +https://example.local/job-agent)',
       ...(init.headers || {}),
     },
   };
@@ -388,7 +412,13 @@ function extractJobCandidates(
   source: CompanyCareerSourceConfig,
   query: JobSearchQuery,
 ): Array<{ id?: string; title: string; url?: string; location?: string; description?: string }> {
-  const out: Array<{ id?: string; title: string; url?: string; location?: string; description?: string }> = [];
+  const out: Array<{
+    id?: string;
+    title: string;
+    url?: string;
+    location?: string;
+    description?: string;
+  }> = [];
   out.push(...extractJobLinks(html, source, query));
   out.push(...extractStructuredTitles(html, source, query));
   out.push(...extractHeadingTitles(html, source, query));
@@ -400,7 +430,13 @@ function extractJobLinks(
   source: CompanyCareerSourceConfig,
   query: JobSearchQuery,
 ): Array<{ id?: string; title: string; url?: string; location?: string; description?: string }> {
-  const out: Array<{ id?: string; title: string; url?: string; location?: string; description?: string }> = [];
+  const out: Array<{
+    id?: string;
+    title: string;
+    url?: string;
+    location?: string;
+    description?: string;
+  }> = [];
   const linkPattern = /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
   let match: RegExpExecArray | null;
   while ((match = linkPattern.exec(html))) {
@@ -425,7 +461,13 @@ function extractStructuredTitles(
   query: JobSearchQuery,
 ): Array<{ id?: string; title: string; url?: string; location?: string; description?: string }> {
   const decoded = decodeHtml(html);
-  const out: Array<{ id?: string; title: string; url?: string; location?: string; description?: string }> = [];
+  const out: Array<{
+    id?: string;
+    title: string;
+    url?: string;
+    location?: string;
+    description?: string;
+  }> = [];
   const patterns = [
     /"title"\s*:\s*"([^"]{4,140})"/gi,
     /\\"title\\"\s*:\s*\\"([^"]{4,140})\\"/gi,
@@ -458,7 +500,13 @@ function extractHeadingTitles(
   source: CompanyCareerSourceConfig,
   query: JobSearchQuery,
 ): Array<{ id?: string; title: string; url?: string; location?: string; description?: string }> {
-  const out: Array<{ id?: string; title: string; url?: string; location?: string; description?: string }> = [];
+  const out: Array<{
+    id?: string;
+    title: string;
+    url?: string;
+    location?: string;
+    description?: string;
+  }> = [];
   const headingPattern = /<h[1-4]\b[^>]*>([\s\S]*?)<\/h[1-4]>/gi;
   let match: RegExpExecArray | null;
   while ((match = headingPattern.exec(html))) {
@@ -484,7 +532,11 @@ function titleFromDescription(value: string, query: JobSearchQuery): string {
 
 function looksLikeJob(title: string, href: string, query: JobSearchQuery): boolean {
   const haystack = `${title} ${href}`.toLowerCase();
-  if (!/(job|career|position|opening|role|software|engineer|developer|backend|platform|cloud|data)/.test(haystack)) {
+  if (
+    !/(job|career|position|opening|role|software|engineer|developer|backend|platform|cloud|data)/.test(
+      haystack,
+    )
+  ) {
     return false;
   }
   const tokens = [...tokenize(query.role), ...(query.skills || []).flatMap(tokenize)].filter(
@@ -530,7 +582,10 @@ function inferRequirements(text: string): string[] {
 }
 
 function tokenize(value: string): string[] {
-  return value.toLowerCase().split(/[^a-z0-9+#.]+/g).filter(Boolean);
+  return value
+    .toLowerCase()
+    .split(/[^a-z0-9+#.]+/g)
+    .filter(Boolean);
 }
 
 function locationName(value: unknown): string {

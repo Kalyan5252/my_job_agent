@@ -24,7 +24,10 @@ export class DashboardService {
 
   async snapshot() {
     const queues = await this.queueSnapshots();
-    const reviews = await this.manualReviews.list();
+    const [reviews, reviewCounts] = await Promise.all([
+      this.manualReviews.list({ limit: 20 }),
+      this.manualReviews.counts(),
+    ]);
     const sourceCount = COMPANY_CAREER_SOURCES.filter((source) => source.enabled).length;
 
     return {
@@ -43,11 +46,11 @@ export class DashboardService {
         writeQueue: DISCOVERY_WRITE_QUEUE_NAME,
       },
       reliability: {
-        retries: 'BullMQ attempts=3 with exponential backoff',
-        manualReviewOpen: reviews.filter((item) => item.status !== 'resolved').length,
-        manualReviewTotal: reviews.length,
+        retries: 'BullMQ attempts=3 with exponential backoff (submit-mode applications: 1 attempt)',
+        manualReviewOpen: reviewCounts.open,
+        manualReviewTotal: reviewCounts.total,
       },
-      manualReviews: reviews.slice(0, 20),
+      manualReviews: reviews.map(({ job: _job, runOptions: _options, ...item }) => item),
     };
   }
 
@@ -63,10 +66,9 @@ export class DashboardService {
       return names.map((name) => emptyQueue(name, false));
     }
 
-    const connection = getRedisConnection();
-    const queues = names.map((name) => new Queue(name, { connection }));
+    const queues = names.map((name) => this.queue(name));
 
-    try {
+    {
       return await Promise.all(
         queues.map(async (queue) => {
           const counts = await queue.getJobCounts(
@@ -89,9 +91,18 @@ export class DashboardService {
           };
         }),
       );
-    } finally {
-      await Promise.allSettled(queues.map((queue) => queue.close()));
     }
+  }
+
+  private static queues = new Map<string, Queue>();
+
+  private queue(name: string): Queue {
+    let queue = DashboardService.queues.get(name);
+    if (!queue) {
+      queue = new Queue(name, { connection: getRedisConnection() });
+      DashboardService.queues.set(name, queue);
+    }
+    return queue;
   }
 }
 

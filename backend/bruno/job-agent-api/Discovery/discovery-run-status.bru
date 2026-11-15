@@ -1,0 +1,11 @@
+meta {
+  name: Discovery run status
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/workflows/discovery/runs/{{runId}}
+  body: none
+  auth: inherit
+}

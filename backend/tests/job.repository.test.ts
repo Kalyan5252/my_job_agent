@@ -105,6 +105,19 @@ class FakeJobCollection {
     let modifiedCount = 0;
 
     for (const operation of operations) {
+      // Mirror MongoDB: the same path in two update operators is a conflict error.
+      const { $set, $setOnInsert, $inc } = operation.updateOne.update;
+      const seen = new Set<string>();
+      for (const key of [
+        ...Object.keys($set),
+        ...Object.keys($setOnInsert),
+        ...Object.keys($inc),
+      ]) {
+        if (seen.has(key)) {
+          throw new Error(`Updating the path '${key}' would create a conflict at '${key}'`);
+        }
+        seen.add(key);
+      }
       const id = keyOf(operation.updateOne.filter);
       const existing = this.records.get(id);
       const next: StoredScoredJob = {

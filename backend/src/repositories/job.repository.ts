@@ -1,4 +1,4 @@
-import { Collection } from 'mongodb';
+import { Collection, Filter, ObjectId, WithId } from 'mongodb';
 import { jobsCollection } from '../db/mongo/client';
 import { ScoredJob } from '../types';
 
@@ -70,13 +70,14 @@ export class JobRepository {
           filter: { source: job.source, externalId: job.externalId },
           update: {
             $set: {
-              ...job,
+              ...withoutManagedFields(job),
               lastSeenAt: now,
               lastDiscoveryRunId: options.discoveryRunId,
             },
+            // scrapeCount must only appear in $inc: MongoDB rejects the same path in
+            // $setOnInsert and $inc ("would create a conflict"). $inc on insert starts at 1.
             $setOnInsert: {
               firstSeenAt: now,
-              scrapeCount: 0,
             },
             $inc: { scrapeCount: 1 },
           },
@@ -97,6 +98,40 @@ export class JobRepository {
       updatedCount: result.modifiedCount,
       duplicateInputCount,
     };
+  }
+
+  async list(query: JobListQuery): Promise<{ total: number; items: JobListItem[] }> {
+    const collection = await this.collection();
+    const filter: Filter<StoredScoredJob> = {};
+    if (query.runId) filter.lastDiscoveryRunId = query.runId;
+    if (query.apply !== undefined) filter.apply = query.apply;
+    if (query.minScore !== undefined) filter.score = { $gte: query.minScore };
+    if (query.source) filter.source = query.source;
+    if (query.company) filter.company = { $regex: escapeRegex(query.company), $options: 'i' };
+    if (query.q) {
+      const rx = { $regex: escapeRegex(query.q), $options: 'i' };
+      filter.$or = [{ title: rx }, { company: rx }, { description: rx }];
+    }
+
+    const sort: Record<string, 1 | -1> =
+      query.sort === 'recent' ? { lastSeenAt: -1 } : { score: -1, lastSeenAt: -1 };
+    const [total, docs] = await Promise.all([
+      collection.countDocuments(filter),
+      collection
+        .find(filter)
+        .sort(sort)
+        .skip(query.offset ?? 0)
+        .limit(query.limit ?? 50)
+        .toArray(),
+    ]);
+    return { total, items: docs.map(toListItem) };
+  }
+
+  async findById(id: string): Promise<JobListItem | null> {
+    if (!ObjectId.isValid(id)) return null;
+    const collection = await this.collection();
+    const doc = await collection.findOne({ _id: new ObjectId(id) } as Filter<StoredScoredJob>);
+    return doc ? toListItem(doc) : null;
   }
 
   private async collection(): Promise<Collection<StoredScoredJob>> {
@@ -136,4 +171,41 @@ export class JobRepository {
   private key(job: Pick<ScoredJob, 'source' | 'externalId'>): string {
     return `${job.source}::${job.externalId}`;
   }
+}
+
+export interface JobListQuery {
+  runId?: string;
+  apply?: boolean;
+  minScore?: number;
+  source?: string;
+  company?: string;
+  q?: string;
+  sort?: 'score' | 'recent';
+  limit?: number;
+  offset?: number;
+}
+
+export type JobListItem = StoredScoredJob & { id: string };
+
+function toListItem(doc: WithId<StoredScoredJob>): JobListItem {
+  const { _id, rawData: _rawData, ...rest } = doc;
+  return { ...rest, id: _id.toHexString() };
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Fields owned by the repository; never let caller input overwrite them via $set. */
+function withoutManagedFields(job: ScoredJob): ScoredJob {
+  const {
+    _id: _ignoredId,
+    id: _ignoredListId,
+    scrapeCount: _scrapeCount,
+    firstSeenAt: _firstSeenAt,
+    lastSeenAt: _lastSeenAt,
+    lastDiscoveryRunId: _lastRun,
+    ...rest
+  } = job as ScoredJob & Partial<StoredScoredJob> & { _id?: unknown; id?: unknown };
+  return rest;
 }

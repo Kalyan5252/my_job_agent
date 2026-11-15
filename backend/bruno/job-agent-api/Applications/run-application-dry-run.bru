@@ -1,0 +1,27 @@
+meta {
+  name: Run application (dry-run)
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/workflows/application/run
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "job": {
+      "id": "example-1",
+      "source": "direct-input",
+      "title": "Backend Engineer",
+      "company": "Example Corp",
+      "applyUrl": "https://example.com/careers/backend-engineer/apply"
+    },
+    "options": {
+      "mode": "dry-run",
+      "preview": true
+    }
+  }
+}

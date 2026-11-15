@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { env } from '../config/env';
+import { paths, resolveFromCwd } from '../config/paths';
 import { FormField, JobProfile } from '../types';
 
 interface CandidateProfile {
@@ -46,9 +46,21 @@ interface WorkHistoryItem {
   to?: string;
 }
 
+/** Cache keyed by file mtimes so profile/resume uploads via the API apply immediately. */
+function fileStamp(filePath: string): string {
+  try {
+    const stat = fs.statSync(filePath);
+    return `${stat.mtimeMs}:${stat.size}`;
+  } catch {
+    return 'missing';
+  }
+}
+
 export class ResumeService {
   private candidateCache: CandidateProfile | null = null;
+  private candidateStamp = '';
   private resumeTextCache: string | null = null;
+  private resumeTextStamp = '';
 
   summarizeForRole(profile: JobProfile): string {
     const hydrated = this.hydrateProfile(profile);
@@ -114,8 +126,11 @@ export class ResumeService {
   }
 
   getResumeText(): string {
-    if (this.resumeTextCache !== null) return this.resumeTextCache;
-    const resumePath = this.resolvePath(env.RESUME_TEXT_PATH);
+    const resumePath = paths.resumeText('primary');
+    const stamp = fileStamp(resumePath);
+    if (this.resumeTextCache !== null && stamp === this.resumeTextStamp)
+      return this.resumeTextCache;
+    this.resumeTextStamp = stamp;
     if (!fs.existsSync(resumePath)) {
       this.resumeTextCache = '';
       return this.resumeTextCache;
@@ -131,8 +146,7 @@ export class ResumeService {
       : '';
     if (pathFromCandidate && fs.existsSync(pathFromCandidate)) return pathFromCandidate;
 
-    const configured = this.resolvePath(env.RESUME_FILE_PATH);
-    return configured;
+    return paths.resumePdf('primary');
   }
 
   getComputedExperienceYears(): number | undefined {
@@ -140,24 +154,28 @@ export class ResumeService {
   }
 
   private getCandidateProfile(): CandidateProfile {
-    if (this.candidateCache) return this.candidateCache;
+    const profilePath = paths.candidateProfile('primary');
+    const stamp = `${fileStamp(profilePath)}|${fileStamp(paths.manualProfile())}`;
+    if (this.candidateCache && stamp === this.candidateStamp) return this.candidateCache;
+    this.candidateStamp = stamp;
 
-    const profilePath = this.resolvePath(env.CANDIDATE_PROFILE_PATH);
-    if (!fs.existsSync(profilePath)) {
+    if (!fs.existsSync(profilePath) && !fs.existsSync(paths.manualProfile())) {
       this.candidateCache = {};
       return this.candidateCache;
     }
 
     try {
-      const raw = fs.readFileSync(profilePath, 'utf8');
-      const parsed = JSON.parse(raw) as CandidateProfile;
+      const parsed = fs.existsSync(profilePath)
+        ? (JSON.parse(fs.readFileSync(profilePath, 'utf8')) as CandidateProfile)
+        : {};
       const manual = this.loadManualProfile();
       this.candidateCache = {
         ...parsed,
         ...manual,
         name: manual.name || parsed.name,
-        linkedin: this.normalizeUrl(parsed.linkedin, 'https://linkedin.com/in/'),
-        github: this.normalizeUrl(parsed.github, 'https://github.com/'),
+        linkedin: manual.linkedin || this.normalizeUrl(parsed.linkedin, 'https://linkedin.com/in/'),
+        github: manual.github || this.normalizeUrl(parsed.github, 'https://github.com/'),
+        skills: [...new Set([...(parsed.skills || []), ...(manual.skills || [])])],
         leetcode: this.normalizeUrl(manual.leetcode, 'https://leetcode.com/u/'),
         emails: manual.emails && manual.emails.length > 0 ? manual.emails : parsed.emails,
         phones: manual.phones && manual.phones.length > 0 ? manual.phones : parsed.phones,
@@ -375,11 +393,11 @@ export class ResumeService {
   }
 
   private resolvePath(p: string): string {
-    return path.isAbsolute(p) ? p : path.resolve(process.cwd(), p);
+    return resolveFromCwd(p);
   }
 
   private loadManualProfile(): CandidateProfile {
-    const manualPath = this.resolvePath(env.MANUAL_PROFILE_PATH);
+    const manualPath = paths.manualProfile();
     if (!fs.existsSync(manualPath)) return {};
     try {
       const raw = JSON.parse(fs.readFileSync(manualPath, 'utf8')) as {
@@ -397,6 +415,7 @@ export class ResumeService {
           postalCode?: string;
         };
         education?: { university?: string; degree?: string };
+        skills?: string[];
         preferences?: {
           noticePeriodDays?: number;
           canJoinImmediately?: boolean;
@@ -426,6 +445,7 @@ export class ResumeService {
         postalCode: raw.address?.postalCode,
         university: raw.education?.university,
         degree: raw.education?.degree,
+        skills: raw.skills,
         noticePeriodDays: raw.preferences?.noticePeriodDays,
         canJoinImmediately: raw.preferences?.canJoinImmediately,
         hasNonCompete: raw.preferences?.hasNonCompete,

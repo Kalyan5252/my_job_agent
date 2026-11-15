@@ -16,6 +16,7 @@ let scrapeQueue: Queue<DiscoveryScrapeTask> | null = null;
 let scoreQueue: Queue<DiscoveryScoreTask> | null = null;
 let writeQueue: Queue<DiscoveryWriteTask> | null = null;
 
+// BullMQ rejects custom job ids containing ':' (unless exactly 3 segments), so use '-'.
 function queueOptions(jobId: string, priority = 3) {
   return {
     jobId,
@@ -68,16 +69,16 @@ export class BullDiscoveryTaskDispatcher implements DiscoveryTaskDispatcher {
     await getDiscoveryScrapeQueue().add(
       'scrape',
       task,
-      queueOptions(`scrape:${task.runId}`, discoveryPriority(task.searchQuery?.priority)),
+      queueOptions(`scrape-${task.runId}`, discoveryPriority(task.searchQuery?.priority)),
     );
   }
 
   async dispatchScore(task: DiscoveryScoreTask): Promise<void> {
-    await getDiscoveryScoreQueue().add('score', task, queueOptions(`score:${task.runId}`, 2));
+    await getDiscoveryScoreQueue().add('score', task, queueOptions(`score-${task.runId}`, 2));
   }
 
   async dispatchWrite(task: DiscoveryWriteTask): Promise<void> {
-    await getDiscoveryWriteQueue().add('write', task, queueOptions(`write:${task.runId}`, 1));
+    await getDiscoveryWriteQueue().add('write', task, queueOptions(`write-${task.runId}`, 1));
   }
 }
 
@@ -86,4 +87,38 @@ function discoveryPriority(priority?: JobSearchPriority): number {
   if (priority.highPayFirst) return 1;
   if (priority.companyTierOrder?.[0] === 'top') return 2;
   return 3;
+}
+
+export async function getDiscoveryRunStatus(runId: string) {
+  const stages = [
+    { stage: 'scrape', queue: getDiscoveryScrapeQueue() },
+    { stage: 'score', queue: getDiscoveryScoreQueue() },
+    { stage: 'write', queue: getDiscoveryWriteQueue() },
+  ] as const;
+
+  const result = await Promise.all(
+    stages.map(async ({ stage, queue }) => {
+      const job = await queue.getJob(`${stage}-${runId}`);
+      if (!job) return { stage, state: 'not_started' as const };
+      const state = await job.getState();
+      return {
+        stage,
+        state,
+        attemptsMade: job.attemptsMade,
+        failedReason: job.failedReason || undefined,
+        finishedAt: job.finishedOn ? new Date(job.finishedOn).toISOString() : undefined,
+      };
+    }),
+  );
+
+  const write = result[2];
+  const failed = result.find((item) => item.state === 'failed');
+  const status = failed
+    ? 'failed'
+    : write.state === 'completed'
+      ? 'completed'
+      : result.every((item) => item.state === 'not_started')
+        ? 'unknown'
+        : 'running';
+  return { runId, status, stages: result };
 }

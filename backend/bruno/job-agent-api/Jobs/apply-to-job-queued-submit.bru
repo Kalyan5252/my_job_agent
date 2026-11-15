@@ -1,0 +1,28 @@
+meta {
+  name: Apply to job (queued submit)
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/jobs/{{jobId}}/apply
+  body: json
+  auth: inherit
+}
+
+params:query {
+  async: true
+}
+
+body:json {
+  {
+    "options": {
+      "mode": "submit",
+      "preview": true
+    }
+  }
+}
+
+script:post-response {
+  if (res.status === 202) bru.setEnvVar("queuedJobId", res.body.jobId);
+}

@@ -31,6 +31,50 @@ export async function initPostgres(): Promise<void> {
     CREATE UNIQUE INDEX IF NOT EXISTS ux_applications_source_job
     ON applications(source, job_external_id);
   `);
+
+  await pgPool.query(`
+    ALTER TABLE applications ADD COLUMN IF NOT EXISTS apply_url TEXT;
+    ALTER TABLE applications ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+    CREATE INDEX IF NOT EXISTS ix_applications_status ON applications(status);
+    CREATE INDEX IF NOT EXISTS ix_applications_company ON applications(LOWER(company));
+  `);
+
+  // Human-review queue (previously a JSON file; moved here for concurrency safety).
+  await pgPool.query(`
+    CREATE TABLE IF NOT EXISTS manual_reviews (
+      id TEXT PRIMARY KEY,
+      status TEXT NOT NULL,
+      blocker_code TEXT NOT NULL,
+      blocker_reason TEXT NOT NULL,
+      company TEXT NOT NULL,
+      title TEXT NOT NULL,
+      apply_url TEXT,
+      current_url TEXT,
+      screenshot_path TEXT,
+      last_step TEXT,
+      job JSONB NOT NULL,
+      run_options JSONB,
+      notes TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS ix_manual_reviews_status ON manual_reviews(status);
+  `);
+
+  // Emails already used by the tracker, so status updates are applied once.
+  await pgPool.query(`
+    CREATE TABLE IF NOT EXISTS processed_emails (
+      message_id TEXT PRIMARY KEY,
+      matched_company TEXT,
+      classified_status TEXT,
+      updated_rows INTEGER NOT NULL DEFAULT 0,
+      processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+}
+
+export async function closePostgres(): Promise<void> {
+  await pgPool.end().catch(() => undefined);
 }
 
 function validatePostgresUrl(url: string): void {

@@ -1,0 +1,11 @@
+meta {
+  name: Verify Google session
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{baseUrl}}/sessions/google/verify
+  body: none
+  auth: inherit
+}

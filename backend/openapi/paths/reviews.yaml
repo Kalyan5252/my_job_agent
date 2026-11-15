@@ -1,0 +1,150 @@
+/manual-reviews:
+  get:
+    tags: [Manual review]
+    summary: List human-review items
+    operationId: listReviews
+    parameters:
+      - name: status
+        in: query
+        required: false
+        description: Filter by status
+        schema: { type: string, enum: [blocked_manual_review, user_reviewing, resume_requested, resolved] }
+      - name: limit
+        in: query
+        required: false
+        description: Max items
+        schema: { type: integer, default: 100 }
+    responses:
+      "200":
+        description: OK
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                items: { type: array, items: { $ref: "../components/schemas.yaml#/ManualReview" } }
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized
+      "500":
+        $ref: ../components/errors.yaml#/InternalServerError
+/manual-reviews/{id}:
+  get:
+    tags: [Manual review]
+    summary: Get a review item
+    operationId: getReview
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Review id
+        schema: { type: string }
+    responses:
+      "200":
+        description: OK
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/ManualReview
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized
+      "404":
+        $ref: ../components/errors.yaml#/NotFound
+/manual-reviews/{id}/screenshot:
+  get:
+    tags: [Manual review]
+    summary: Screenshot captured when the run was blocked
+    operationId: getReviewScreenshot
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Review id
+        schema: { type: string }
+    responses:
+      "200":
+        description: OK
+        content:
+          image/png:
+            schema: { type: string, format: binary }
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized
+      "404":
+        $ref: ../components/errors.yaml#/NotFound
+/manual-reviews/{id}/open:
+  post:
+    tags: [Manual review]
+    summary: Mark as being reviewed
+    operationId: openReview
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Review id
+        schema: { type: string }
+    responses:
+      "200":
+        description: OK
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/ManualReview
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized
+      "404":
+        $ref: ../components/errors.yaml#/NotFound
+/manual-reviews/{id}/resume:
+  post:
+    tags: [Manual review]
+    summary: Mark resolved-by-human and re-run the application
+    operationId: resumeReview
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Review id
+        schema: { type: string }
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas.yaml#/ReviewResumeRequest
+    responses:
+      "200":
+        description: Re-run finished (202 when queued)
+      "400":
+        $ref: ../components/errors.yaml#/BadRequest
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized
+      "404":
+        $ref: ../components/errors.yaml#/NotFound
+/manual-reviews/{id}/resolve:
+  post:
+    tags: [Manual review]
+    summary: Close the review item
+    operationId: resolveReview
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Review id
+        schema: { type: string }
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas.yaml#/ReviewNotes
+    responses:
+      "200":
+        description: OK
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/ManualReview
+      "400":
+        $ref: ../components/errors.yaml#/BadRequest
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized
+      "404":
+        $ref: ../components/errors.yaml#/NotFound

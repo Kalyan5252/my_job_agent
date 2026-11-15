@@ -1,0 +1,19 @@
+meta {
+  name: List open reviews
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/manual-reviews
+  body: none
+  auth: inherit
+}
+
+params:query {
+  status: blocked_manual_review
+}
+
+script:post-response {
+  if (res.status === 200 && res.body.items.length) bru.setEnvVar("reviewId", res.body.items[0].id);
+}

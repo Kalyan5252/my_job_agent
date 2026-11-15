@@ -1,0 +1,45 @@
+/dashboard/summary:
+  get:
+    tags: [Dashboard]
+    summary: Sources, queues, reviews and application counts
+    operationId: dashboardSummary
+    responses:
+      "200":
+        description: OK
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized
+      "500":
+        $ref: ../components/errors.yaml#/InternalServerError
+/digests/email/preview:
+  get:
+    tags: [Dashboard]
+    summary: Preview the email digest
+    operationId: previewDigest
+    responses:
+      "200":
+        description: OK
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized
+      "500":
+        $ref: ../components/errors.yaml#/InternalServerError
+/digests/email/send:
+  post:
+    tags: [Dashboard]
+    summary: Send the email digest via SMTP
+    operationId: sendDigest
+    responses:
+      "200":
+        description: OK
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized
+      "500":
+        $ref: ../components/errors.yaml#/InternalServerError

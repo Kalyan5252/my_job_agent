@@ -80,10 +80,7 @@ export class DiscoveryExportService {
       await sheets.spreadsheets.batchUpdate({
         spreadsheetId,
         requestBody: {
-          requests: [
-            ...this.buildSummaryRequests(input),
-            ...this.buildJobsRequests(input.jobs),
-          ],
+          requests: [...this.buildSummaryRequests(input), ...this.buildJobsRequests(input.jobs)],
         },
       });
 
@@ -141,9 +138,7 @@ export class DiscoveryExportService {
 
   private buildSummaryRequests(input: DiscoveryExportInput): sheets_v4.Schema$Request[] {
     const location =
-      input.searchQuery?.location ||
-      input.searchQuery?.filters?.locations?.join(', ') ||
-      'Any';
+      input.searchQuery?.location || input.searchQuery?.filters?.locations?.join(', ') || 'Any';
     const { counts } = input.diagnostics;
 
     const rows: SummaryRow[] = [

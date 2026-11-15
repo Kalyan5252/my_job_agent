@@ -1,0 +1,34 @@
+meta {
+  name: Schedule discovery (Redis)
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/workflows/discovery/schedule
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "role": "Backend Engineer",
+    "skills": [
+      "TypeScript",
+      "Node.js",
+      "PostgreSQL",
+      "AWS"
+    ],
+    "country": "India",
+    "locations": [
+      "Bengaluru",
+      "Hyderabad"
+    ],
+    "remoteOnly": false,
+    "maxResults": 30
+  }
+}
+
+script:post-response {
+  if (res.status === 202) bru.setEnvVar("runId", res.body.runId);
+}

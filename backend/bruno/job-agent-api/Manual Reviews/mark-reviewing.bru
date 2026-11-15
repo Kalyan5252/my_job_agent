@@ -1,0 +1,11 @@
+meta {
+  name: Mark reviewing
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/manual-reviews/{{reviewId}}/open
+  body: none
+  auth: inherit
+}

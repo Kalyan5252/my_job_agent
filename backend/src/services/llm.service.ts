@@ -31,6 +31,11 @@ export class LLMService {
       : null;
   }
 
+  /** Deterministic skill-overlap score used when the LLM is unavailable. */
+  keywordScore(profile: JobProfile, text: string): number {
+    return this.fallbackScore(profile, text);
+  }
+
   private fallbackScore(profile: JobProfile, text: string): number {
     const haystack = text.toLowerCase();
     const hits = profile.skills.filter((skill) => haystack.includes(skill.toLowerCase())).length;
@@ -119,7 +124,12 @@ export class LLMService {
       context,
     )}\nReturn strict JSON object where keys are field names and values are answers.`;
 
-    const text = await this.createResponseWithFallback('fieldMapping', prompt);
+    let text = '';
+    try {
+      text = await this.createResponseWithFallback('fieldMapping', prompt);
+    } catch (error) {
+      console.warn(`[llm] mapFormFields failed: ${summarizeLlmError(error)}`);
+    }
     const mapped = safeParseJson<Record<string, string>>(text);
     if (!mapped) {
       return Object.fromEntries(
@@ -131,32 +141,41 @@ export class LLMService {
   }
 
   async classifyEmailStatus(emailText: string): Promise<JobStatus> {
-    const lower = emailText.toLowerCase();
-
-    if (!this.hasProviderClient()) {
-      if (lower.includes('regret') || lower.includes('not moving forward')) return 'rejected';
-      if (lower.includes('interview') || lower.includes('schedule')) return 'interview';
-      if (lower.includes('received') || lower.includes('application')) return 'applied';
+    const keywordStatus = (): JobStatus => {
+      const lower = emailText.toLowerCase();
+      if (/regret|not moving forward|unfortunately|other candidates|not be progressing/.test(lower))
+        return 'rejected';
+      if (/interview|schedule a call|next round|assessment/.test(lower)) return 'interview';
+      if (/application (has been )?received|thank you for applying|thanks for applying/.test(lower))
+        return 'applied';
       return 'unknown';
+    };
+
+    if (!this.hasProviderClient()) return keywordStatus();
+
+    const prompt = `Classify the job-application status this email communicates. Return strict JSON: {"status":"applied|rejected|interview|unknown"}. Text=${emailText}`;
+    try {
+      const text = await this.createResponseWithFallback('statusClassification', prompt);
+      const status = safeParseJson<{ status: string }>(text)?.status;
+      return status === 'applied' ||
+        status === 'rejected' ||
+        status === 'interview' ||
+        status === 'unknown'
+        ? status
+        : keywordStatus();
+    } catch (error) {
+      console.warn(`[llm] classifyEmailStatus failed: ${summarizeLlmError(error)}`);
+      return keywordStatus();
     }
-
-    const prompt = `Classify status from email text. Return strict JSON: {"status":"applied|rejected|interview|unknown"}. Text=${emailText}`;
-    const text = await this.createResponseWithFallback('statusClassification', prompt);
-    const parsed = safeParseJson<{ status: JobStatus }>(text);
-
-    return parsed?.status ?? 'unknown';
   }
 
   private fallbackFieldValue(field: FormField, role: string): string {
+    // Never invent personal data: leave identity fields empty so ResumeService fills
+    // them from the real profile, or validation flags them for human review.
     const label = `${field.name} ${field.label}`.toLowerCase();
-    if (label.includes('name')) return 'Kalyan';
-    if (label.includes('email')) return 'kalyan@example.com';
-    if (label.includes('phone')) return '+91-9000000000';
-    if (label.includes('linkedin')) return 'https://www.linkedin.com/in/kalyan';
-    if (label.includes('github')) return 'https://github.com/kalyan';
     if (label.includes('cover') || label.includes('why'))
       return `I am excited to contribute as a ${role}.`;
-    return 'N/A';
+    return '';
   }
 
   private hasProviderClient(): boolean {
