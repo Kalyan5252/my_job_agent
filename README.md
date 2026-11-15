@@ -1,121 +1,85 @@
-# AI Job Application Agent System
+# Distributed Job Agent System
 
-Multi-agent backend system that discovers jobs, applies with intelligent form handling, and tracks updates from email.
+Single-repo job automation platform with a Fastify/BullMQ backend and a Next.js dashboard.
 
-## Architecture
+## Layout
 
-- `JobHunterAgent`: Fetches jobs, normalizes data, scores relevance, and queues applications.
-- `ApplicationAgent`: Understands form fields, generates answers, fills forms via Playwright.
-- `TrackerAgent`: Parses emails and updates application status in PostgreSQL.
+- `backend/` - API server, workers, queues, Playwright automation, scoring, persistence, OpenAPI, Bruno collections, profile data.
+- `frontend/` - Next.js dashboard for discovery runs, queue health, source coverage, email digests, and human review handoff.
+- root `package.json` - npm workspaces and orchestration scripts.
 
-## Stack
+## What It Demonstrates
 
-- Node.js + TypeScript + Fastify
-- OpenAI or OpenRouter API for reasoning/scoring
-- Playwright for browser automation
-- MongoDB (raw jobs + AI metadata)
-- PostgreSQL (application tracking)
-- Redis + BullMQ (queue/workers)
+- 30+ configured company sources plus API/HTML/browser fallback strategies.
+- Redis/BullMQ queues for scrape, score, write, and application work.
+- Multiple workers with configurable concurrency.
+- Queue priorities, retries, and exponential backoff.
+- Source throttling to avoid hammering career sites.
+- AI relevance scoring with rate-limit-aware fallback.
+- Manual review queue for CAPTCHA/login/MFA style blockers.
+- Email digest preview/send pipeline.
+- Violet glassmorphism dashboard.
 
 ## Setup
-
-1. Create/update `.env` in the project root and fill credentials.
-2. Install deps:
 
 ```bash
 npm install
 ```
 
-3. Start API:
+Backend environment lives in `backend/.env`. The backend also checks the repo root for `.env` for compatibility.
+
+## Development
+
+Start API and dashboard:
 
 ```bash
 npm run dev
 ```
 
-4. Start worker:
+Backend: `http://localhost:3000`
+
+Frontend: `http://localhost:3001`
+
+Start workers separately when Redis is enabled:
 
 ```bash
+npm run dev:discovery-worker
 npm run dev:worker
-```
-
-5. Start scheduler:
-
-```bash
 npm run dev:cron
 ```
 
-## Main Endpoints
+## Production Build
+
+```bash
+npm run build
+npm run start
+```
+
+## Important Endpoints
 
 - `GET /health`
+- `GET /dashboard/summary`
+- `GET /manual-reviews`
+- `POST /manual-reviews/:id/open`
+- `POST /manual-reviews/:id/resume`
+- `POST /manual-reviews/:id/resolve`
+- `GET /digests/email/preview`
+- `POST /digests/email/send`
 - `POST /workflows/discovery/run`
-- `POST /workflows/tracking/run`
+- `POST /workflows/discovery/schedule`
 - `POST /workflows/application/run`
 
-## Notes
+## Human Review Flow
 
-- CAPTCHA/anti-bot flows are handled with fallback + human-in-loop hooks.
-- LLM actions include schema constraints and guard checks before submit.
-- All automation decisions are auditable through structured logs.
-- Main provider toggle: set `AI_PROVIDER=openai` or `AI_PROVIDER=openrouter`.
-- Scraper-assist toggle: set `AI_SCRAPER_ENABLED=true` and `AI_SCRAPER_PROVIDER=openai` or `AI_SCRAPER_PROVIDER=openrouter`.
-- For OpenAI, set `OPENAI_API_KEY`; for OpenRouter, set `OPENROUTER_API_KEY`.
-- Default OpenRouter models are set to `google/gemma-4-31b` in `.env.example`.
-- You can switch providers without code changes by updating `.env` and restarting the process.
+The agent does not bypass CAPTCHA or anti-abuse checks. When application automation reaches a blocker, the backend records a `blocked_manual_review` item with the company, role, URL, blocker code, screenshot path when available, and resume token. The dashboard shows it in the Human Review Queue. The user opens the URL/session, completes the manual step, then clicks Resume or Resolve.
 
-## Neon Postgres
+## Useful Config
 
-- Set `POSTGRES_URL` to your Neon connection string (usually includes `sslmode=require`).
-- Leave `POSTGRES_SSL_MODE=prefer` (default) or set `require` explicitly.
-- Keep `POSTGRES_SSL_REJECT_UNAUTHORIZED=true` for production-safe TLS verification.
-
-## Discovery Controls
-
-Country-aware discovery uses `SCRAPER_DEFAULT_COUNTRY=India` when a request does not include
-`country`. Request-level `country` and `locations` override the env default. Country-capable
-sources such as Adzuna, JSearch, and LinkedIn public search run for supported countries; remote
-boards are used for remote mode or fallback when country sources are too sparse.
-
-Experience filters are derived from the hydrated candidate profile. The agent computes
-`computedExperienceYears` from structured work dates when available, experience-highlight date
-ranges when present, or `manualProfile.json` `preferences.skillYears` as fallback. Explicit
-`minExperienceYears` and `maxExperienceYears` in a discovery request override the computed band.
-
-Remote discovery can be triggered with `remoteOnly: true`, `location: "Remote"`, or
-`locations: ["Remote"]`. In remote mode, Remotive and We Work Remotely are prioritized. Country
-remote searches include country-restricted and worldwide remote roles; non-remote country searches
-prefer explicit city/country matches and use remote/global results only as fallback. Set
-`SCRAPER_REMOTE_BOOST=true` to rank explicit remote jobs above location-preferred jobs.
-
-Example discovery payload:
-
-```json
-{
-  "role": "Backend Engineer",
-  "country": "India",
-  "locations": ["Hyderabad", "Bengaluru"],
-  "remoteOnly": false,
-  "maxResults": 40
-}
-```
-
-Example remote payload:
-
-```json
-{
-  "role": "Backend Engineer",
-  "country": "United States",
-  "remoteOnly": true,
-  "maxResults": 40
-}
-```
-
-Example global remote payload:
-
-```json
-{
-  "role": "Backend Engineer",
-  "locations": ["Remote"],
-  "remoteOnly": true,
-  "maxResults": 40
-}
-```
+- `REDIS_ENABLED=true`
+- `DISCOVERY_SCRAPE_WORKER_CONCURRENCY=4`
+- `DISCOVERY_AI_WORKER_CONCURRENCY=4`
+- `DISCOVERY_WRITE_WORKER_CONCURRENCY=2`
+- `DISCOVERY_SOURCE_CONCURRENCY=5`
+- `DISCOVERY_SOURCE_RATE_LIMIT_MS=750`
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `DIGEST_RECIPIENT_EMAIL`
+- `NEXT_PUBLIC_API_BASE_URL=http://localhost:3000`

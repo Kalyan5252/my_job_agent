@@ -2,6 +2,7 @@ import {
   COMPANY_CAREER_SOURCES,
   CompanyCareerSourceConfig,
 } from '../config/companySources';
+import { env } from '../config/env';
 import { JobPosting, JobSearchQuery } from '../types';
 
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
@@ -27,7 +28,14 @@ export class CompanyCareerSource {
 
   async fetchJobs(query: JobSearchQuery): Promise<CompanyCareerSourceResult> {
     const enabledSources = this.sources.filter((source) => source.enabled);
-    const results = await Promise.all(enabledSources.map((source) => this.fetchCompany(source, query)));
+    const results = await mapWithConcurrency(
+      enabledSources,
+      env.DISCOVERY_SOURCE_CONCURRENCY,
+      async (source) => {
+        await sleep(env.DISCOVERY_SOURCE_RATE_LIMIT_MS);
+        return this.fetchCompany(source, query);
+      },
+    );
 
     return {
       jobs: results.flatMap((result) => result.jobs),
@@ -564,6 +572,33 @@ function absolutizeUrl(value: string, base: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+async function mapWithConcurrency<T, R>(
+  values: T[],
+  concurrency: number,
+  mapper: (value: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const output: R[] = new Array(values.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(Math.max(1, concurrency), values.length);
+
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (nextIndex < values.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        output[index] = await mapper(values[index], index);
+      }
+    }),
+  );
+
+  return output;
+}
+
+function sleep(ms: number): Promise<void> {
+  if (ms <= 0) return Promise.resolve();
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function slugify(value: string): string {

@@ -11,6 +11,9 @@ import { DiscoveryWorkflow } from './workflows/discovery.workflow';
 import { TrackingWorkflow } from './workflows/tracking.workflow';
 import { ApplyWorkflow } from './workflows/apply.workflow';
 import { ResumeService } from './services/resume.service';
+import { DashboardService } from './services/dashboard.service';
+import { EmailDigestService } from './services/emailDigest.service';
+import { ManualReviewService } from './services/manualReview.service';
 import { BrowserTool } from './tools/browser.tool';
 import {
   ApplicationRunOptions,
@@ -77,6 +80,9 @@ export function createApp(deps?: {
   apply?: ApplyWorkflow;
   browser?: BrowserTool;
   resume?: ResumeService;
+  dashboard?: DashboardService;
+  manualReviews?: ManualReviewService;
+  emailDigest?: EmailDigestService;
 }) {
   const app = Fastify({ logger: { level: env.LOG_LEVEL } });
   const discovery = deps?.discovery ?? new DiscoveryWorkflow();
@@ -84,6 +90,9 @@ export function createApp(deps?: {
   const apply = deps?.apply ?? new ApplyWorkflow();
   const browser = deps?.browser ?? new BrowserTool();
   const resume = deps?.resume ?? new ResumeService();
+  const manualReviews = deps?.manualReviews ?? new ManualReviewService();
+  const dashboard = deps?.dashboard ?? new DashboardService(manualReviews);
+  const emailDigest = deps?.emailDigest ?? new EmailDigestService(dashboard);
   const openApiRoot = path.resolve(process.cwd(), 'openapi');
   app.register(cors, {
     origin: '*', 
@@ -142,6 +151,33 @@ export function createApp(deps?: {
     service: 'job-agent',
     at: new Date().toISOString(),
   }));
+  app.get('/dashboard/summary', async () => dashboard.snapshot());
+  app.get('/manual-reviews', async () => ({
+    items: await manualReviews.list(),
+  }));
+  app.post<{ Params: { id: string } }>('/manual-reviews/:id/open', async (request, reply) => {
+    const item = await manualReviews.markReviewing(request.params.id);
+    if (!item) return reply.code(404).send({ error: 'Not Found', message: 'Review item not found' });
+    return item;
+  });
+  app.post<{ Params: { id: string }; Body: { notes?: string } }>(
+    '/manual-reviews/:id/resume',
+    async (request, reply) => {
+      const item = await manualReviews.requestResume(request.params.id, request.body?.notes);
+      if (!item) return reply.code(404).send({ error: 'Not Found', message: 'Review item not found' });
+      return item;
+    },
+  );
+  app.post<{ Params: { id: string }; Body: { notes?: string } }>(
+    '/manual-reviews/:id/resolve',
+    async (request, reply) => {
+      const item = await manualReviews.resolve(request.params.id, request.body?.notes);
+      if (!item) return reply.code(404).send({ error: 'Not Found', message: 'Review item not found' });
+      return item;
+    },
+  );
+  app.get('/digests/email/preview', async () => emailDigest.buildDigest());
+  app.post('/digests/email/send', async () => emailDigest.sendDigest());
   app.get('/auth/linkedin/status', async () => ({
     enabled: env.LINKEDIN_AUTH_ENABLED,
     storageStatePath: env.LINKEDIN_STORAGE_STATE_PATH,
@@ -248,11 +284,13 @@ export function createApp(deps?: {
         profile: normalizedProfile,
         options: body.options,
       });
+      const manualReview = await manualReviews.createFromApplicationResult(normalizedJob, result);
 
       return {
         success: result.status === 'applied' || result.status === 'draft_filled',
         mode: body.options?.mode ?? 'dry-run',
         result,
+        manualReview,
       };
     },
   );

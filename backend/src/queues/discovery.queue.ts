@@ -6,6 +6,7 @@ import {
 } from '../pipeline/discovery.types';
 import { DiscoveryTaskDispatcher } from '../pipeline/discovery.dispatcher';
 import { getRedisConnection, isRedisEnabled } from './apply.queue';
+import { JobSearchPriority } from '../types';
 
 export const DISCOVERY_SCRAPE_QUEUE_NAME = 'discovery-scrape';
 export const DISCOVERY_SCORE_QUEUE_NAME = 'discovery-score';
@@ -15,9 +16,10 @@ let scrapeQueue: Queue<DiscoveryScrapeTask> | null = null;
 let scoreQueue: Queue<DiscoveryScoreTask> | null = null;
 let writeQueue: Queue<DiscoveryWriteTask> | null = null;
 
-function queueOptions(jobId: string) {
+function queueOptions(jobId: string, priority = 3) {
   return {
     jobId,
+    priority,
     attempts: 3,
     backoff: { type: 'exponential' as const, delay: 3_000 },
     removeOnComplete: 200,
@@ -63,14 +65,25 @@ export function getDiscoveryWriteQueue(): Queue<DiscoveryWriteTask> {
 
 export class BullDiscoveryTaskDispatcher implements DiscoveryTaskDispatcher {
   async dispatchScrape(task: DiscoveryScrapeTask): Promise<void> {
-    await getDiscoveryScrapeQueue().add('scrape', task, queueOptions(`scrape:${task.runId}`));
+    await getDiscoveryScrapeQueue().add(
+      'scrape',
+      task,
+      queueOptions(`scrape:${task.runId}`, discoveryPriority(task.searchQuery?.priority)),
+    );
   }
 
   async dispatchScore(task: DiscoveryScoreTask): Promise<void> {
-    await getDiscoveryScoreQueue().add('score', task, queueOptions(`score:${task.runId}`));
+    await getDiscoveryScoreQueue().add('score', task, queueOptions(`score:${task.runId}`, 2));
   }
 
   async dispatchWrite(task: DiscoveryWriteTask): Promise<void> {
-    await getDiscoveryWriteQueue().add('write', task, queueOptions(`write:${task.runId}`));
+    await getDiscoveryWriteQueue().add('write', task, queueOptions(`write:${task.runId}`, 1));
   }
+}
+
+function discoveryPriority(priority?: JobSearchPriority): number {
+  if (!priority) return 3;
+  if (priority.highPayFirst) return 1;
+  if (priority.companyTierOrder?.[0] === 'top') return 2;
+  return 3;
 }

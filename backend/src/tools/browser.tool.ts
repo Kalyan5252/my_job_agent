@@ -1,6 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { chromium,firefox, type BrowserContextOptions, type Locator, type Page } from 'playwright';
+import {
+  chromium,
+  firefox,
+  type Browser,
+  type BrowserContextOptions,
+  type LaunchOptions,
+  type Locator,
+  type Page,
+} from 'playwright';
 import { env } from '../config/env';
 import { FieldAnswer, FormField } from '../types';
 
@@ -62,6 +70,8 @@ interface IdentityContext {
 }
 
 export class BrowserTool {
+  private static pooledBrowser: Browser | null = null;
+
   async withPage<T>(
     url: string,
     action: (page: Page) => Promise<T>,
@@ -69,24 +79,15 @@ export class BrowserTool {
   ): Promise<T> {
     const preview = options.preview ?? false;
     const requiresInteractiveBrowser = preview || Boolean(options.captchaHandoff);
-    let browser;
-    try{
-     browser = await chromium.launch({
-      headless: requiresInteractiveBrowser ? false : (options.headless ?? true),
-      slowMo: preview ? 120 : 0,
-    });
-  }
-  catch (error) {
-    try {
-      console.warn('Chromium launch failed, falling back to Firefox. Original error:', error);
-      browser = await firefox.launch({
-        headless: requiresInteractiveBrowser ? false : (options.headless ?? true),
-        slowMo: preview ? 120 : 0,
-      });
-    } catch(error){
-      throw new Error(`Failed to launch both Chromium and Firefox browsers. Original error: ${error}`);
-    }
-  }
+    const browser = requiresInteractiveBrowser
+      ? await this.launchIsolatedBrowser({
+          headless: false,
+          slowMo: preview ? 120 : 0,
+        })
+      : await this.getPooledBrowser({
+          headless: options.headless ?? true,
+          slowMo: 0,
+        });
     const context = await browser.newContext(this.resolveContextOptions(url, options));
     const page = await context.newPage();
 
@@ -103,7 +104,34 @@ export class BrowserTool {
       }
       await page.close();
       await context.close();
-      await browser.close();
+      if (requiresInteractiveBrowser) {
+        await browser.close();
+      }
+    }
+  }
+
+  private async getPooledBrowser(options: LaunchOptions): Promise<Browser> {
+    if (BrowserTool.pooledBrowser?.isConnected()) {
+      return BrowserTool.pooledBrowser;
+    }
+
+    BrowserTool.pooledBrowser = await this.launchIsolatedBrowser(options);
+    BrowserTool.pooledBrowser.on('disconnected', () => {
+      BrowserTool.pooledBrowser = null;
+    });
+    return BrowserTool.pooledBrowser;
+  }
+
+  private async launchIsolatedBrowser(options: LaunchOptions): Promise<Browser> {
+    try {
+      return await chromium.launch(options);
+    } catch (error) {
+      try {
+        console.warn('Chromium launch failed, falling back to Firefox. Original error:', error);
+        return await firefox.launch(options);
+      } catch {
+        throw new Error(`Failed to launch both Chromium and Firefox browsers. Original error: ${error}`);
+      }
     }
   }
 
