@@ -4,6 +4,7 @@ import { DiscoveryWorkflow } from '../src/workflows/discovery.workflow';
 import { TrackingWorkflow } from '../src/workflows/tracking.workflow';
 import { connectMongo } from '../src/db/mongo/client';
 import { initPostgres } from '../src/db/postgres/client';
+import { isRedisEnabled } from '../src/queues/apply.queue';
 
 async function main() {
   await connectMongo();
@@ -19,6 +20,12 @@ async function main() {
   };
 
   cron.schedule('0 */6 * * *', async () => {
+    if (isRedisEnabled()) {
+      const result = await discovery.schedule(profile);
+      console.log(`[CRON][Discovery] queued runId=${result.runId}`);
+      return;
+    }
+
     const result = await discovery.run(profile);
     console.log(`[CRON][Discovery] total=${result.total} apply=${result.applyCount}`);
   });

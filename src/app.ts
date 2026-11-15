@@ -6,6 +6,7 @@ import swaggerUi from '@fastify/swagger-ui';
 import fs from 'node:fs';
 import path from 'node:path';
 import { env } from './config/env';
+import { DiscoveryPipelineResult } from './pipeline/discovery.types';
 import { DiscoveryWorkflow } from './workflows/discovery.workflow';
 import { TrackingWorkflow } from './workflows/tracking.workflow';
 import { ApplyWorkflow } from './workflows/apply.workflow';
@@ -70,13 +71,19 @@ interface ApplicationRequestBody {
   options?: ApplicationRunOptions;
 }
 
-export function createApp() {
+export function createApp(deps?: {
+  discovery?: DiscoveryWorkflow;
+  tracking?: TrackingWorkflow;
+  apply?: ApplyWorkflow;
+  browser?: BrowserTool;
+  resume?: ResumeService;
+}) {
   const app = Fastify({ logger: { level: env.LOG_LEVEL } });
-  const discovery = new DiscoveryWorkflow();
-  const tracking = new TrackingWorkflow();
-  const apply = new ApplyWorkflow();
-  const browser = new BrowserTool();
-  const resume = new ResumeService();
+  const discovery = deps?.discovery ?? new DiscoveryWorkflow();
+  const tracking = deps?.tracking ?? new TrackingWorkflow();
+  const apply = deps?.apply ?? new ApplyWorkflow();
+  const browser = deps?.browser ?? new BrowserTool();
+  const resume = deps?.resume ?? new ResumeService();
   const openApiRoot = path.resolve(process.cwd(), 'openapi');
   app.register(cors, {
     origin: '*', 
@@ -172,6 +179,15 @@ export function createApp() {
     const searchQuery = toSearchQuery(request.body, profile);
     return discovery.run(profile, searchQuery);
   });
+
+  app.post<{ Body: DiscoveryRequestBody }>(
+    '/workflows/discovery/schedule',
+    async (request): Promise<DiscoveryPipelineResult> => {
+      const profile = toProfile(request.body);
+      const searchQuery = toSearchQuery(request.body, profile);
+      return discovery.schedule(profile, searchQuery);
+    },
+  );
 
   app.post<{ Body: DiscoveryRequestBody }>(
     '/workflows/discovery/understand',
