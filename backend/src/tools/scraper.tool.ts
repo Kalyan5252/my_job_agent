@@ -1,4 +1,4 @@
-import { chromium ,firefox} from 'playwright';
+import { chromium, firefox } from 'playwright';
 import {
   CompanyTier,
   DiscoveryDiagnostics,
@@ -18,11 +18,7 @@ interface NormalizedJob extends Omit<JobPosting, 'location'> {
 }
 
 type LocationMatchClass =
-  | 'location_match'
-  | 'country_match'
-  | 'remote_country_match'
-  | 'remote_global'
-  | 'no_match';
+  'location_match' | 'country_match' | 'remote_country_match' | 'remote_global' | 'no_match';
 
 export class ScraperTool {
   private readonly aiScraper = new AiScraperService();
@@ -30,7 +26,21 @@ export class ScraperTool {
   private readonly apifySource = new ApifySource();
   private lastDiagnostics: DiscoveryDiagnostics = this.emptyDiagnostics();
 
+  /** Backwards-compatible: jobs only. Prefer discover() which also returns diagnostics. */
   async fetchJobs(input: JobProfile | JobSearchQuery): Promise<JobPosting[]> {
+    const result = await this.discover(input);
+    this.lastDiagnostics = result.diagnostics;
+    return result.jobs;
+  }
+
+  /**
+   * Runs all strategies and returns jobs together with this run's diagnostics.
+   * Diagnostics are returned (not stored on the instance) so concurrent runs on a
+   * shared ScraperTool cannot read each other's results.
+   */
+  async discover(
+    input: JobProfile | JobSearchQuery,
+  ): Promise<{ jobs: JobPosting[]; diagnostics: DiscoveryDiagnostics }> {
     const query = this.normalizeQuery(input);
     const remoteMode = this.isRemoteQuery(query);
     this.log(
@@ -57,7 +67,8 @@ export class ScraperTool {
         stage: 'source',
         severity: 'warning',
         code: 'REMOTE_FALLBACK_USED',
-        message: 'Country-specific sources returned too few jobs; remote/global sources were used as fallback.',
+        message:
+          'Country-specific sources returned too few jobs; remote/global sources were used as fallback.',
         meta: { countryJobs: countryJobs.length },
       });
     }
@@ -133,8 +144,7 @@ export class ScraperTool {
           code: 'NO_ACTIONABLE_RESULTS',
           message: 'No jobs with valid application URLs were found.',
         });
-        this.lastDiagnostics = { counts, findings };
-        return [];
+        return { jobs: [], diagnostics: { counts, findings } };
       }
 
       const synthetic = this.syntheticFallbackJobs(query);
@@ -149,8 +159,10 @@ export class ScraperTool {
         message: 'No actionable live jobs found; synthetic fallback jobs returned.',
         meta: { syntheticCount: synthetic.length },
       });
-      this.lastDiagnostics = { counts, findings };
-      return synthetic.slice(0, query.maxResults ?? 50);
+      return {
+        jobs: synthetic.slice(0, query.maxResults ?? 50),
+        diagnostics: { counts, findings },
+      };
     }
 
     const skillAligned = actionable.filter((job) => this.hasSkillSignal(job, query));
@@ -170,15 +182,16 @@ export class ScraperTool {
     const experienceAligned = candidates.filter((job) => this.matchesExperienceBand(job, query));
     counts.experienceAlignedJobs = experienceAligned.length;
     if (experienceAligned.length === 0) {
-      this.log('No jobs passed strict experience filter (0-2 years)');
+      this.log(
+        `No jobs passed experience filter (${query.filters?.minExperienceYears ?? 0}-${query.filters?.maxExperienceYears ?? 'any'} years)`,
+      );
       findings.push({
         stage: 'filter',
         severity: 'warning',
         code: 'EXPERIENCE_FILTER_EMPTY',
-        message: 'All candidate jobs were excluded by strict 0-2 years experience policy.',
+        message: `All candidate jobs were excluded by the experience band (${query.filters?.minExperienceYears ?? 0}-${query.filters?.maxExperienceYears ?? 'any'} years).`,
       });
-      this.lastDiagnostics = { counts, findings };
-      return [];
+      return { jobs: [], diagnostics: { counts, findings } };
     }
 
     const locationEligibleCount = this.countLocationEligibleJobs(experienceAligned, query);
@@ -215,8 +228,7 @@ export class ScraperTool {
           code: 'PRIORITIZATION_EMPTY',
           message: 'No jobs remained after prioritization and sorting.',
         });
-        this.lastDiagnostics = { counts, findings };
-        return [];
+        return { jobs: [], diagnostics: { counts, findings } };
       }
 
       const synthetic = this.syntheticFallbackJobs(query);
@@ -231,15 +243,19 @@ export class ScraperTool {
         message: 'No jobs left after filters; synthetic fallback jobs returned.',
         meta: { syntheticCount: synthetic.length },
       });
-      this.lastDiagnostics = { counts, findings };
-      return synthetic.slice(0, query.maxResults ?? 50);
+      return {
+        jobs: synthetic.slice(0, query.maxResults ?? 50),
+        diagnostics: { counts, findings },
+      };
     }
 
-    this.lastDiagnostics = { counts, findings };
     this.log(
       `Total deduped jobs: ${merged.length}, actionable jobs: ${actionable.length}, prioritized jobs: ${prioritized.length}`,
     );
-    return prioritized.slice(0, query.maxResults ?? 50);
+    return {
+      jobs: prioritized.slice(0, query.maxResults ?? 50),
+      diagnostics: { counts, findings },
+    };
   }
 
   getLastDiagnostics(): DiscoveryDiagnostics {
@@ -251,7 +267,9 @@ export class ScraperTool {
 
   private normalizeQuery(input: JobProfile | JobSearchQuery): JobSearchQuery {
     const country = this.normalizeCountry(
-      'experience' in input ? env.SCRAPER_DEFAULT_COUNTRY : (input.filters?.country ?? env.SCRAPER_DEFAULT_COUNTRY),
+      'experience' in input
+        ? env.SCRAPER_DEFAULT_COUNTRY
+        : (input.filters?.country ?? env.SCRAPER_DEFAULT_COUNTRY),
     );
     const inputLocation = 'experience' in input ? undefined : input.location;
     const explicitLocations = 'experience' in input ? undefined : input.filters?.locations;
@@ -422,10 +440,7 @@ export class ScraperTool {
     return [...adzuna, ...jsearch, ...linkedin];
   }
 
-  private async scrapeAdzunaApi(
-    query: JobSearchQuery,
-    roles: string[],
-  ): Promise<NormalizedJob[]> {
+  private async scrapeAdzunaApi(query: JobSearchQuery, roles: string[]): Promise<NormalizedJob[]> {
     if (!env.ADZUNA_APP_ID || !env.ADZUNA_APP_KEY) {
       this.log('Adzuna skipped: missing ADZUNA_APP_ID or ADZUNA_APP_KEY');
       return [];
@@ -1246,7 +1261,7 @@ export class ScraperTool {
   private async launchChromiumWithFallback(): Promise<Awaited<ReturnType<typeof chromium.launch>>> {
     try {
       this.log('Attempting standard Chromium launch...');
-      return await chromium.launch({ headless: true });
+      return await chromium.launch({ headless: true, channel: env.BROWSER_CHANNEL || undefined });
     } catch (error) {
       this.log('Standard launch failed. Attempting Catalina-compatible fallback...');
 
@@ -1518,47 +1533,50 @@ export class ScraperTool {
       }))
       .filter((item) => item.matchClass !== 'no_match');
 
-    const locationScoped = ranked.length > 0 ? ranked : jobs.map((job) => ({ job, matchClass: 'no_match' as const }));
+    const locationScoped =
+      ranked.length > 0 ? ranked : jobs.map((job) => ({ job, matchClass: 'no_match' as const }));
     const salaryScoped = locationScoped.filter((item) => (item.job.salaryLpa ?? 0) >= minSalaryLpa);
     const filtered = salaryScoped.length > 0 ? salaryScoped : locationScoped;
 
-    return filtered.sort((a, b) => {
-      const aClass = this.locationMatchRank(a.matchClass, remoteMode);
-      const bClass = this.locationMatchRank(b.matchClass, remoteMode);
-      if (aClass !== bClass) return aClass - bClass;
+    return filtered
+      .sort((a, b) => {
+        const aClass = this.locationMatchRank(a.matchClass, remoteMode);
+        const bClass = this.locationMatchRank(b.matchClass, remoteMode);
+        if (aClass !== bClass) return aClass - bClass;
 
-      if (env.SCRAPER_REMOTE_BOOST || remoteMode) {
-        const remoteDelta = this.remotePriority(a.job) - this.remotePriority(b.job);
-        if (remoteDelta !== 0) return remoteDelta;
-      }
+        if (env.SCRAPER_REMOTE_BOOST || remoteMode) {
+          const remoteDelta = this.remotePriority(a.job) - this.remotePriority(b.job);
+          if (remoteDelta !== 0) return remoteDelta;
+        }
 
-      const aLoc = this.locationPriority(a.job.location, preferredLocations);
-      const bLoc = this.locationPriority(b.job.location, preferredLocations);
-      if (aLoc !== bLoc) return aLoc - bLoc;
+        const aLoc = this.locationPriority(a.job.location, preferredLocations);
+        const bLoc = this.locationPriority(b.job.location, preferredLocations);
+        if (aLoc !== bLoc) return aLoc - bLoc;
 
-      const aLinkedIn = (a.job.source || '').includes('linkedin') ? 0 : 1;
-      const bLinkedIn = (b.job.source || '').includes('linkedin') ? 0 : 1;
-      if (aLinkedIn !== bLinkedIn) return aLinkedIn - bLinkedIn;
+        const aLinkedIn = (a.job.source || '').includes('linkedin') ? 0 : 1;
+        const bLinkedIn = (b.job.source || '').includes('linkedin') ? 0 : 1;
+        if (aLinkedIn !== bLinkedIn) return aLinkedIn - bLinkedIn;
 
-      const aEarly = this.isEarlyCareerRole(a.job) ? 0 : 1;
-      const bEarly = this.isEarlyCareerRole(b.job) ? 0 : 1;
-      if (aEarly !== bEarly) return aEarly - bEarly;
+        const aEarly = this.isEarlyCareerRole(a.job) ? 0 : 1;
+        const bEarly = this.isEarlyCareerRole(b.job) ? 0 : 1;
+        if (aEarly !== bEarly) return aEarly - bEarly;
 
-      const aTier = tierRank.get(a.job.companyTier ?? 'other') ?? 99;
-      const bTier = tierRank.get(b.job.companyTier ?? 'other') ?? 99;
-      if (aTier !== bTier) return aTier - bTier;
+        const aTier = tierRank.get(a.job.companyTier ?? 'other') ?? 99;
+        const bTier = tierRank.get(b.job.companyTier ?? 'other') ?? 99;
+        if (aTier !== bTier) return aTier - bTier;
 
-      const aHighPay = (a.job.salaryLpa ?? 0) >= 15 ? 0 : 1;
-      const bHighPay = (b.job.salaryLpa ?? 0) >= 15 ? 0 : 1;
-      if (aHighPay !== bHighPay) return aHighPay - bHighPay;
+        const aHighPay = (a.job.salaryLpa ?? 0) >= 15 ? 0 : 1;
+        const bHighPay = (b.job.salaryLpa ?? 0) >= 15 ? 0 : 1;
+        if (aHighPay !== bHighPay) return aHighPay - bHighPay;
 
-      if (highPayFirst) {
-        const salaryDelta = (b.job.salaryLpa ?? 0) - (a.job.salaryLpa ?? 0);
-        if (salaryDelta !== 0) return salaryDelta;
-      }
+        if (highPayFirst) {
+          const salaryDelta = (b.job.salaryLpa ?? 0) - (a.job.salaryLpa ?? 0);
+          if (salaryDelta !== 0) return salaryDelta;
+        }
 
-      return (a.job.title || '').localeCompare(b.job.title || '');
-    }).map((item) => item.job);
+        return (a.job.title || '').localeCompare(b.job.title || '');
+      })
+      .map((item) => item.job);
   }
 
   private countLocationEligibleJobs(jobs: JobPosting[], query: JobSearchQuery): number {
@@ -1713,7 +1731,10 @@ export class ScraperTool {
     return aliases[lower] || country;
   }
 
-  private defaultLocationsForCountry(country: string | undefined, requestedLocation?: string): string[] {
+  private defaultLocationsForCountry(
+    country: string | undefined,
+    requestedLocation?: string,
+  ): string[] {
     if (requestedLocation && requestedLocation.trim()) return [requestedLocation.trim()];
     const normalized = this.normalizeCountry(country).toLowerCase();
     if (normalized === 'india') return ['Hyderabad', 'Bengaluru'];
@@ -1795,8 +1816,8 @@ export class ScraperTool {
   private isRemoteQuery(query: JobSearchQuery): boolean {
     return Boolean(
       query.filters?.remoteOnly ||
-        this.hasRemoteSignal(query.location, query.filters?.locations || []) ||
-        this.hasRemoteSignal(query.filters?.country, []),
+      this.hasRemoteSignal(query.location, query.filters?.locations || []) ||
+      this.hasRemoteSignal(query.filters?.country, []),
     );
   }
 
@@ -1826,7 +1847,8 @@ export class ScraperTool {
   }
 
   private remotePriority(job: JobPosting): number {
-    const text = `${job.source} ${job.title} ${job.location || ''} ${job.description}`.toLowerCase();
+    const text =
+      `${job.source} ${job.title} ${job.location || ''} ${job.description}`.toLowerCase();
     const explicit =
       text.includes('remote') ||
       text.includes('work from home') ||

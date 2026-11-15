@@ -3,7 +3,10 @@
     "target": "ES2022",
     "module": "CommonJS",
     "moduleResolution": "Node",
-    "lib": ["ES2022", "DOM"],
+    "lib": [
+      "ES2022",
+      "DOM"
+    ],
     "rootDir": ".",
     "outDir": "dist",
     "strict": true,
@@ -11,7 +14,14 @@
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "types": ["node"]
+    "types": [
+      "node",
+      "bun"
+    ],
+    "noEmit": true
   },
-  "include": ["src", "scripts"]
+  "include": [
+    "src",
+    "scripts"
+  ]
 }

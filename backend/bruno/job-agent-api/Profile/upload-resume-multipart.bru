@@ -1,0 +1,24 @@
+meta {
+  name: Upload resume (multipart)
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/profile/resume
+  body: multipartForm
+  auth: inherit
+}
+
+params:query {
+  identity: {{identity}}
+}
+
+body:multipart-form {
+  file: @file(/path/to/resume.pdf)
+}
+
+docs {
+  Pick your PDF in the Body tab. `identity=secondary` stores the resume used for Google-sign-in applications.
+  CLI: curl -X POST "$URL/profile/resume?identity=primary" -H "Authorization: Bearer $TOKEN" -F file=@resume.pdf
+}

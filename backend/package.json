@@ -3,33 +3,31 @@
   "version": "0.1.0",
   "private": true,
   "description": "Fastify API and distributed workers for the job agent",
-  "main": "dist/src/server.js",
+  "main": "src/server.ts",
   "scripts": {
-    "dev": "tsx watch src/server.ts",
-    "dev:worker": "tsx watch src/queues/worker.ts",
-    "dev:discovery-worker": "tsx watch src/queues/discovery.worker.ts",
-    "dev:cron": "tsx watch scripts/cronJobs.ts",
-    "auth:linkedin": "tsx scripts/saveLinkedinSession.ts",
-    "auth:google": "tsx scripts/saveGoogleSession.ts",
-    "auth:google:refresh": "tsx scripts/saveGoogleSession.ts",
-    "auth:google:capture": "tsx scripts/captureGoogleSessionFromChrome.ts",
-    "check:company-sources": "tsx scripts/checkCompanySources.ts",
-    "check:apify-source": "tsx scripts/checkApifySource.ts",
-    "resume:import": "python3 scripts/import_resume_profile.py --pdf \"data/resume/Kalyan Show (1).pdf\"",
-    "resume:import:secondary": "python3 scripts/import_resume_profile.py --pdf \"data/resume/Kalyan Show (2).pdf\" --out-text \"data/profile/resume.secondary.txt\" --out-profile \"data/profile/candidateProfile.secondary.json\"",
-    "build": "tsc -p tsconfig.json",
-    "start": "node dist/src/server.js",
-    "start:worker": "node dist/src/queues/worker.js",
-    "start:discovery-worker": "node dist/src/queues/discovery.worker.js",
-    "start:cron": "node dist/scripts/cronJobs.js",
-    "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test tests/**/*.test.ts"
+    "dev": "bun --watch src/server.ts",
+    "dev:worker": "bun --watch src/queues/worker.ts",
+    "dev:discovery-worker": "bun --watch src/queues/discovery.worker.main.ts",
+    "dev:cron": "bun --watch scripts/cronJobs.ts",
+    "start": "bun src/server.ts",
+    "start:worker": "bun src/queues/worker.ts",
+    "start:discovery-worker": "bun src/queues/discovery.worker.main.ts",
+    "start:cron": "bun scripts/cronJobs.ts",
+    "session": "bun scripts/session.ts",
+    "auth:hash-password": "bun scripts/hashPassword.ts",
+    "browsers:install": "bunx playwright install chromium",
+    "check:company-sources": "bun scripts/checkCompanySources.ts",
+    "check:apify-source": "bun scripts/checkApifySource.ts",
+    "build": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "bun test tests --timeout 60000"
   },
   "engines": {
-    "node": ">=22.19.0"
+    "bun": ">=1.3.0"
   },
   "dependencies": {
     "@fastify/cors": "^11.2.0",
+    "@fastify/multipart": "9.0.3",
     "@fastify/rate-limit": "^10.3.0",
     "@fastify/swagger": "^9.7.0",
     "@fastify/swagger-ui": "^5.2.6",
@@ -46,6 +44,7 @@
     "openai": "^4.56.0",
     "pg": "^8.12.0",
     "playwright": "1.59.1",
+    "unpdf": "1.4.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
@@ -55,7 +54,6 @@
     "@types/node-cron": "^3.0.11",
     "@types/nodemailer": "^6.4.17",
     "@types/pg": "^8.20.0",
-    "esbuild": "^0.18.20",
-    "tsx": "^4.7.1"
+    "@types/bun": "1.3.9"
   }
 }

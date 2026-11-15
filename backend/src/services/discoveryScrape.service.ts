@@ -10,7 +10,7 @@ export class DiscoveryScrapeService {
 
   async run(context: DiscoveryPipelineContext): Promise<DiscoveryScrapeStageResult> {
     const hydratedProfile = this.resumeService.hydrateProfile(context.profile);
-    const jobs = await this.scraper.fetchJobs({
+    const { jobs, diagnostics } = await this.scraper.discover({
       role: context.searchQuery?.role || hydratedProfile.role,
       skills: context.searchQuery?.skills || hydratedProfile.skills,
       computedExperienceYears: hydratedProfile.computedExperienceYears,
@@ -26,7 +26,7 @@ export class DiscoveryScrapeService {
         profile: hydratedProfile,
       },
       jobs,
-      diagnostics: this.scraper.getLastDiagnostics(),
+      diagnostics,
     };
   }
 }

@@ -1,0 +1,22 @@
+meta {
+  name: List jobs
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/jobs
+  body: none
+  auth: inherit
+}
+
+params:query {
+  apply: true
+  minScore: 60
+  sort: score
+  limit: 20
+}
+
+script:post-response {
+  if (res.status === 200 && res.body.items.length) bru.setEnvVar("jobId", res.body.items[0].id);
+}

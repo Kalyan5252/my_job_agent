@@ -1,10 +1,9 @@
-import { TrackerAgent } from '../agents/tracker.agent';
+import { TrackerAgent, TrackingResult } from '../agents/tracker.agent';
 
 export class TrackingWorkflow {
   private readonly tracker = new TrackerAgent();
 
-  async run(): Promise<{ updates: number }> {
-    const updates = await this.tracker.run();
-    return { updates };
+  async run(): Promise<TrackingResult> {
+    return this.tracker.run();
   }
 }

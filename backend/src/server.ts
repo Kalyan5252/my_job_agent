@@ -1,24 +1,27 @@
 import { createApp } from './app';
 import { env } from './config/env';
-import { connectMongo, closeMongo } from './db/mongo/client';
-import { initPostgres, pgPool } from './db/postgres/client';
+import { closeMongo, connectMongo } from './db/mongo/client';
+import { closePostgres, initPostgres } from './db/postgres/client';
+import { installShutdown } from './lib/shutdown';
+import { closeRedis } from './queues/apply.queue';
+import { SessionService } from './services/session.service';
+import { BrowserTool } from './tools/browser.tool';
 
 async function bootstrap() {
   await connectMongo();
   await initPostgres();
 
   const app = createApp();
-  await app.listen({ port: env.PORT, host: '0.0.0.0' });
+  await app.listen({ port: env.PORT, host: env.HOST });
 
-  const close = async () => {
+  installShutdown('api', async () => {
     await app.close();
-    await pgPool.end();
+    await SessionService.closeAll();
+    await BrowserTool.closePool();
+    await closeRedis();
+    await closePostgres();
     await closeMongo();
-    process.exit(0);
-  };
-
-  process.on('SIGINT', close);
-  process.on('SIGTERM', close);
+  });
 }
 
 bootstrap().catch((err) => {

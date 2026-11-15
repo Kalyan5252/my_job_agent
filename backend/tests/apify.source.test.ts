@@ -51,7 +51,10 @@ test('ApifySource runs configured actor and normalizes jobs', async () => {
 
   assert.equal(result.jobs.length, 1);
   assert.equal(result.jobs[0].source, 'apify-user-job-scraper');
-  assert.equal(result.jobs[0].externalId, 'apify-user-job-scraper-job-1-example-co-backend-engineer');
+  assert.equal(
+    result.jobs[0].externalId,
+    'apify-user-job-scraper-job-1-example-co-backend-engineer',
+  );
   assert.equal(result.jobs[0].applyUrl, 'https://example.com/apply/job-1');
   assert.equal(result.diagnostics[0].fetched, 2);
   assert.equal(result.diagnostics[0].accepted, 1);

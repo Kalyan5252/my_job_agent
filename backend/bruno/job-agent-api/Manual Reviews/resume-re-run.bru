@@ -1,0 +1,18 @@
+meta {
+  name: Resume (re-run)
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/manual-reviews/{{reviewId}}/resume
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "notes": "Session refreshed",
+    "rerun": true
+  }
+}

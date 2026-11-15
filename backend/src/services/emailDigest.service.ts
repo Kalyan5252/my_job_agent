@@ -8,13 +8,14 @@ export class EmailDigestService {
   async buildDigest() {
     const snapshot = await this.dashboard.snapshot();
     const openReviews = snapshot.manualReviews.filter((item) => item.status !== 'resolved');
+    const openCount = snapshot.reliability.manualReviewOpen;
     const failedQueues = snapshot.queues.reduce((sum, queue) => sum + queue.failed, 0);
 
-    const subject = `Job Agent Digest: ${openReviews.length} review item(s), ${failedQueues} failed queue job(s)`;
+    const subject = `Job Agent Digest: ${openCount} review item(s), ${failedQueues} failed queue job(s)`;
     const lines = [
       `Generated: ${snapshot.generatedAt}`,
       `Sources: ${snapshot.sources.enabled}/${snapshot.sources.configured} enabled`,
-      `Manual reviews open: ${openReviews.length}`,
+      `Manual reviews open: ${openCount}`,
       `Queue failures: ${failedQueues}`,
       '',
       'Queues:',

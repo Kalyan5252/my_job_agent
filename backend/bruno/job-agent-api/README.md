@@ -1,20 +1,13 @@
-# Bruno Collection: Job Agent API
+# Bruno collection: Job Agent API
 
-## Import
+1. Open Bruno → **Open Collection** → select `backend/bruno/job-agent-api`.
+2. Pick the `local` (or `production`) environment and set the secret `password`
+   (or paste an API key from `API_KEYS` into `token`).
+3. Run **Auth / Login** – it saves the bearer token into `token`. Every other
+   request inherits `Authorization: Bearer {{token}}`.
 
-1. Open Bruno
-2. Click `Open Collection`
-3. Select `bruno/job-agent-api`
-4. Pick environment `local`
+Typical flow: Profile → Upload resume → Patch manual profile → Sessions (save LinkedIn/Google)
+→ Discovery → Jobs → Apply (dry-run first) → Manual Reviews → Applications.
 
-## Endpoints Included
-
-- `GET /health`
-- `POST /workflows/discovery/run`
-- `POST /workflows/tracking/run`
-- `POST /workflows/application/run`
-
-## Notes
-
-- Default `baseUrl` is `http://localhost:3000`
-- `run-application` uses a sample payload compatible with current `ScoredJob` + `JobProfile` shape
+Requests that return ids (`runId`, `jobId`, `reviewId`, `queuedJobId`, `loginId`) store them
+in environment variables automatically for the follow-up requests.

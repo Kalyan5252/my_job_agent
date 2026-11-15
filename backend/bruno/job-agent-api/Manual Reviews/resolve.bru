@@ -1,0 +1,17 @@
+meta {
+  name: Resolve
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/manual-reviews/{{reviewId}}/resolve
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "notes": "Applied manually"
+  }
+}

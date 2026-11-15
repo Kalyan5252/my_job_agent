@@ -1,0 +1,31 @@
+meta {
+  name: Schedule application (Redis)
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/workflows/application/schedule
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "job": {
+      "id": "example-1",
+      "source": "direct-input",
+      "title": "Backend Engineer",
+      "company": "Example Corp",
+      "applyUrl": "https://example.com/careers/backend-engineer/apply"
+    },
+    "options": {
+      "mode": "dry-run",
+      "preview": true
+    }
+  }
+}
+
+script:post-response {
+  if (res.status === 202) bru.setEnvVar("queuedJobId", res.body.jobId);
+}

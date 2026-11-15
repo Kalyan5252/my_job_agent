@@ -376,231 +376,288 @@ DetailedDiscoveryJob:
               answer:
                 type: string
 
-CandidateProfileResponse:
+LoginResponse:
   type: object
-  required:
-    - profile
-    - computedExperienceYears
-    - resumeFilePath
-    - resumeTextLoaded
-    - secondaryIdentity
-    - manualProfileAvailable
   properties:
-    profile:
-      $ref: "#/JobProfile"
-    computedExperienceYears:
-      type: number
-      nullable: true
-    resumeFilePath:
-      type: string
-    resumeTextLoaded:
-      type: boolean
-    secondaryIdentity:
+    accessToken: { type: string }
+    tokenType: { type: string, example: Bearer }
+    expiresIn: { type: integer, example: 43200 }
+    expiresAt: { type: string, format: date-time }
+Principal:
+  type: object
+  properties:
+    principal:
       type: object
-      required:
-        - email
-        - resumeFilePath
-        - resumeAvailable
-        - profileAvailable
       properties:
-        email:
-          type: string
-        resumeFilePath:
-          type: string
-        resumeAvailable:
-          type: boolean
-        profileAvailable:
-          type: boolean
-    manualProfileAvailable:
-      type: boolean
-
-AuthStatusResponse:
+        type: { type: string, enum: [api_key, user, anonymous] }
+        subject: { type: string }
+        expiresAt: { type: string, format: date-time }
+ReadinessResponse:
   type: object
-  required:
-    - enabled
-    - storageStatePath
-    - sessionFound
   properties:
-    enabled:
-      type: boolean
-    storageStatePath:
-      type: string
-    sessionFound:
-      type: boolean
-
-GoogleAuthStatusResponse:
+    ok: { type: boolean }
+    checks:
+      type: object
+      additionalProperties: { type: string }
+      example: { mongo: ok, postgres: ok, redis: disabled }
+    at: { type: string, format: date-time }
+CandidateProfile:
+  type: object
+  additionalProperties: true
+  properties:
+    name: { type: string }
+    email: { type: string }
+    phone: { type: string }
+    linkedin: { type: string }
+    github: { type: string }
+    skills: { type: array, items: { type: string } }
+    educationHighlights: { type: array, items: { type: string } }
+    experienceHighlights: { type: array, items: { type: string } }
+    workHistory:
+      type: array
+      items:
+        type: object
+        properties:
+          company: { type: string }
+          title: { type: string }
+          startDate: { type: string, example: Jan 2024 }
+          endDate: { type: string, example: Present }
+    noticePeriodDays: { type: integer }
+    canJoinImmediately: { type: boolean }
+    hasNonCompete: { type: boolean }
+ManualProfile:
+  type: object
+  description: Facts the resume parser cannot know (contact details, preferences, salary, skill years).
+  properties:
+    legalName: { type: string }
+    name: { type: string }
+    preferredName: { type: string }
+    emails: { type: array, items: { type: string, format: email } }
+    phones: { type: array, items: { type: string } }
+    skills: { type: array, items: { type: string } }
+    address:
+      type: object
+      properties:
+        line1: { type: string }
+        line2: { type: string }
+        city: { type: string }
+        state: { type: string }
+        postalCode: { type: string }
+        country: { type: string }
+        full: { type: string }
+    profiles:
+      type: object
+      properties:
+        linkedin: { type: string }
+        github: { type: string }
+        leetcode: { type: string }
+    education:
+      type: object
+      properties:
+        university: { type: string }
+        degree: { type: string }
+        start: { type: string }
+        end: { type: string }
+    preferences:
+      type: object
+      properties:
+        noticePeriodDays: { type: integer }
+        canJoinImmediately: { type: boolean }
+        hasNonCompete: { type: boolean }
+        visaSponsorshipRequiredInIndia: { type: boolean }
+        currentSalaryLpa: { type: string }
+        expectedSalaryLpa: { type: number }
+        skillYears: { type: object, additionalProperties: { type: number } }
+ResumeImportResult:
+  type: object
+  properties:
+    identity: { type: string, enum: [primary, secondary] }
+    bytes: { type: integer }
+    textLength: { type: integer }
+    warnings: { type: array, items: { type: string } }
+    profile: { $ref: '#/CandidateProfile' }
+ProfileOverview:
+  type: object
+  properties:
+    searchProfile: { $ref: '#/JobProfile' }
+    computedExperienceYears: { type: number }
+    primary: { type: object, additionalProperties: true }
+    secondary: { type: object, additionalProperties: true }
+    manualProfile: { $ref: '#/ManualProfile' }
+    readyToApply: { type: boolean }
+StorageState:
+  type: object
+  description: Playwright storage state (as produced by `context.storageState()`).
+  required: [cookies]
+  properties:
+    cookies:
+      type: array
+      items:
+        type: object
+        required: [name, value, domain]
+        properties:
+          name: { type: string }
+          value: { type: string }
+          domain: { type: string }
+          path: { type: string }
+          expires: { type: number }
+          httpOnly: { type: boolean }
+          secure: { type: boolean }
+          sameSite: { type: string, enum: [Strict, Lax, None] }
+    origins:
+      type: array
+      items:
+        type: object
+        properties:
+          origin: { type: string }
+          localStorage:
+            type: array
+            items: { type: object, properties: { name: { type: string }, value: { type: string } } }
+SessionStatus:
+  type: object
+  properties:
+    provider: { type: string, enum: [linkedin, google] }
+    enabled: { type: boolean }
+    saved: { type: boolean }
+    readable: { type: boolean }
+    encryptedAtRest: { type: boolean }
+    savedAt: { type: string, format: date-time }
+    cookieCount: { type: integer }
+    hasAuthCookie: { type: boolean }
+    authCookieExpiresAt: { type: string, format: date-time }
+    expired: { type: boolean }
+    interactiveLoginAvailable: { type: boolean }
+SessionVerifyResult:
+  type: object
+  properties:
+    provider: { type: string }
+    valid: { type: boolean }
+    finalUrl: { type: string }
+    reason: { type: string }
+LoginAttempt:
+  type: object
+  properties:
+    loginId: { type: string, format: uuid }
+    provider: { type: string }
+    expiresAt: { type: string, format: date-time }
+    next: { type: string }
+QueuedRun:
+  type: object
+  properties:
+    runId: { type: string }
+    status: { type: string, example: queued }
+    queuedAt: { type: string, format: date-time }
+DiscoveryRunStatus:
+  type: object
+  properties:
+    runId: { type: string }
+    status: { type: string, enum: [unknown, running, completed, failed] }
+    jobs: { type: integer }
+    stages:
+      type: array
+      items:
+        type: object
+        properties:
+          stage: { type: string, enum: [scrape, score, write] }
+          state: { type: string }
+          failedReason: { type: string }
+StoredJob:
   allOf:
-    - $ref: "#/AuthStatusResponse"
+    - $ref: '#/ScoredJob'
     - type: object
-      required:
-        - probeStatus
       properties:
-        probeStatus:
-          type: string
-          enum:
-            - ok
-            - expired
-            - missing_auth
-
-ApplicationRunRequest:
-  type: object
-  required:
-    - job
-  properties:
-    job:
-      allOf:
-        - $ref: "#/ScoredJob"
-        - type: object
-          properties:
-            id:
-              type: string
-            applicationUrl:
-              type: string
-              format: uri
-            application:
-              type: object
-              properties:
-                url:
-                  type: string
-                  format: uri
-      description: job.applyUrl, job.applicationUrl, or job.application.url is required.
-    profile:
-      $ref: "#/JobProfile"
-    options:
-      $ref: "#/ApplicationRunOptions"
-
-ApplicationRunOptions:
+        id: { type: string, description: "MongoDB id used by /jobs/{id}" }
+        firstSeenAt: { type: string, format: date-time }
+        lastSeenAt: { type: string, format: date-time }
+        scrapeCount: { type: integer }
+        lastDiscoveryRunId: { type: string }
+JobList:
   type: object
   properties:
-    mode:
-      type: string
-      enum:
-        - dry-run
-        - submit
-      default: dry-run
-    preview:
-      type: boolean
-    authMode:
-      type: string
-      enum:
-        - auto
-        - google
-        - linkedin
-      default: auto
-    captchaHandoff:
-      type: boolean
-    captchaHandoffTimeoutMs:
-      type: integer
-    keepBrowserOpenAfterSubmit:
-      type: boolean
-    keepBrowserOpenMs:
-      type: integer
-
-ApplicationRunResponse:
+    total: { type: integer }
+    items: { type: array, items: { $ref: '#/StoredJob' } }
+ApplyStoredJobRequest:
   type: object
-  required:
-    - success
-    - mode
-    - result
   properties:
-    success:
-      type: boolean
-    mode:
-      type: string
-      enum:
-        - dry-run
-        - submit
-    result:
-      $ref: "#/ApplicationRunResult"
-
-ApplicationRunResult:
+    profile: { $ref: '#/JobProfile' }
+    options: { $ref: '#/ApplicationRunOptions' }
+QueuedApplication:
   type: object
-  required:
-    - status
-    - message
-    - stage
   properties:
-    status:
-      type: string
-      enum:
-        - queued
-        - in_progress
-        - draft_filled
-        - needs_human
-        - applied
-        - rejected
-        - interview
-        - failed
-        - unknown
-    message:
-      type: string
-    errorCode:
-      type: string
-      enum:
-        - LINKEDIN_AUTH_NOT_CONFIGURED
-        - LINKEDIN_SESSION_EXPIRED
-        - GOOGLE_AUTH_NOT_CONFIGURED
-        - GOOGLE_SESSION_EXPIRED
-        - GOOGLE_AUTH_REQUIRED
-        - CAPTCHA_BLOCKED
-        - LINKEDIN_MODAL_NOT_OPENED
-        - EXTERNAL_APPLY_REDIRECT
-        - NO_FORM_FIELDS
-        - FORM_VALIDATION_FAILED
-        - SUBMIT_NOT_CONFIRMED
-        - UNKNOWN
-    stage:
-      type: string
-      enum:
-        - precheck
-        - extract
-        - map
-        - validate
-        - fill
-        - submit
-        - done
-    filledCount:
-      type: integer
-    requiredFieldCount:
-      type: integer
-    missingRequiredFields:
+    status: { type: string, example: queued }
+    jobId: { type: string }
+ApplicationJobStatus:
+  type: object
+  properties:
+    jobId: { type: string }
+    state: { type: string, example: completed }
+    attemptsMade: { type: integer }
+    failedReason: { type: string }
+    createdAt: { type: string, format: date-time }
+    finishedAt: { type: string, format: date-time }
+    outcome: { $ref: '#/ApplicationRunResponse' }
+ApplicationList:
+  type: object
+  properties:
+    total: { type: integer }
+    items:
       type: array
       items:
-        type: string
-    missingSelectors:
+        type: object
+        properties:
+          id: { type: integer }
+          jobExternalId: { type: string }
+          source: { type: string }
+          company: { type: string }
+          role: { type: string }
+          status: { type: string }
+          notes: { type: string, nullable: true }
+          applyUrl: { type: string, nullable: true }
+          appliedAt: { type: string, format: date-time, nullable: true }
+          createdAt: { type: string, format: date-time }
+          updatedAt: { type: string, format: date-time }
+TrackingResult:
+  type: object
+  properties:
+    scannedEmails: { type: integer }
+    skippedAlreadyProcessed: { type: integer }
+    matchedEmails: { type: integer }
+    updates: { type: integer }
+    details:
       type: array
       items:
-        type: string
-    applyUrl:
-      type: string
-      format: uri
-    targetUrl:
-      type: string
-      format: uri
-    previewScreenshots:
-      type: array
-      items:
-        type: string
-
-TrackingRunResponse:
+        type: object
+        properties:
+          subject: { type: string }
+          company: { type: string }
+          status: { type: string }
+          updatedRows: { type: integer }
+          reason: { type: string }
+ManualReview:
   type: object
-  required:
-    - updates
   properties:
-    updates:
-      type: integer
-
-HealthResponse:
+    id: { type: string }
+    status: { type: string, enum: [blocked_manual_review, user_reviewing, resume_requested, resolved] }
+    blockerCode: { type: string }
+    blockerReason: { type: string }
+    company: { type: string }
+    title: { type: string }
+    applyUrl: { type: string }
+    currentUrl: { type: string }
+    screenshotPath: { type: string }
+    lastStep: { type: string }
+    job: { $ref: '#/ScoredJob' }
+    runOptions: { $ref: '#/ApplicationRunOptions' }
+    notes: { type: string }
+    createdAt: { type: string, format: date-time }
+    updatedAt: { type: string, format: date-time }
+ReviewNotes:
   type: object
-  required:
-    - ok
-    - service
-    - at
   properties:
-    ok:
-      type: boolean
-    service:
-      type: string
-    at:
-      type: string
-      format: date-time
+    notes: { type: string }
+ReviewResumeRequest:
+  type: object
+  properties:
+    notes: { type: string }
+    rerun: { type: boolean, default: true, description: Re-run the application after you fixed the blocker. }
+    options: { $ref: '#/ApplicationRunOptions' }

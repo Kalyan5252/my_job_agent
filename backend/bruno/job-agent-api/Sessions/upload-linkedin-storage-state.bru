@@ -1,0 +1,33 @@
+meta {
+  name: Upload LinkedIn storage state
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{baseUrl}}/sessions/linkedin
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "cookies": [
+      {
+        "name": "li_at",
+        "value": "<paste>",
+        "domain": ".www.linkedin.com",
+        "path": "/",
+        "expires": 1893456000,
+        "httpOnly": true,
+        "secure": true,
+        "sameSite": "None"
+      }
+    ],
+    "origins": []
+  }
+}
+
+docs {
+  Easiest: run `bun run session linkedin` locally - it opens a browser, you log in, and it uploads here automatically.
+}

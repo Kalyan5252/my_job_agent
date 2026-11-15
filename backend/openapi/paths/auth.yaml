@@ -1,51 +1,47 @@
-/auth/linkedin/status:
-  get:
-    tags:
-      - Auth
-    summary: Get LinkedIn auth-session status
-    operationId: getLinkedInAuthStatus
-    parameters:
-      - $ref: ../components/headers.yaml#/AcceptJson
+/auth/login:
+  post:
+    tags: [Auth]
+    summary: Exchange username/password for a bearer token
+    operationId: login
+    security: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas.yaml#/LoginRequest
     responses:
       "200":
-        description: LinkedIn auth-session status
+        description: OK
         content:
           application/json:
             schema:
-              $ref: ../components/schemas.yaml#/AuthStatusResponse
+              $ref: ../components/schemas.yaml#/LoginResponse
       "400":
         $ref: ../components/errors.yaml#/BadRequest
       "401":
         $ref: ../components/errors.yaml#/Unauthorized
-      "429":
-        $ref: ../components/errors.yaml#/TooManyRequests
-      "404":
-        $ref: ../components/errors.yaml#/NotFound
-      "500":
-        $ref: ../components/errors.yaml#/InternalServerError
-
-/auth/google/status:
-  get:
-    tags:
-      - Auth
-    summary: Get Google auth-session status
-    operationId: getGoogleAuthStatus
-    parameters:
-      - $ref: ../components/headers.yaml#/AcceptJson
-    responses:
-      "200":
-        description: Google auth-session status
+      "409":
+        description: Password login not configured
         content:
           application/json:
             schema:
-              $ref: ../components/schemas.yaml#/GoogleAuthStatusResponse
-      "400":
-        $ref: ../components/errors.yaml#/BadRequest
-      "401":
-        $ref: ../components/errors.yaml#/Unauthorized
+              $ref: ../components/schemas.yaml#/ErrorResponse
       "429":
         $ref: ../components/errors.yaml#/TooManyRequests
-      "404":
-        $ref: ../components/errors.yaml#/NotFound
+/auth/me:
+  get:
+    tags: [Auth]
+    summary: Show the authenticated principal
+    operationId: me
+    responses:
+      "200":
+        description: OK
+        content:
+          application/json:
+            schema:
+              $ref: ../components/schemas.yaml#/Principal
+      "401":
+        $ref: ../components/errors.yaml#/Unauthorized
       "500":
         $ref: ../components/errors.yaml#/InternalServerError

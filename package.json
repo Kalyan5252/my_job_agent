@@ -8,29 +8,23 @@
     "frontend"
   ],
   "scripts": {
-    "dev": "concurrently -n backend,frontend -c violet,magenta \"npm run dev -w backend\" \"npm run dev -w frontend\"",
-    "dev:backend": "npm run dev -w backend",
-    "dev:frontend": "npm run dev -w frontend",
-    "dev:worker": "npm run dev:worker -w backend",
-    "dev:discovery-worker": "npm run dev:discovery-worker -w backend",
-    "dev:cron": "npm run dev:cron -w backend",
-    "build": "npm run build -w backend && npm run build -w frontend",
-    "start": "concurrently -n backend,frontend -c violet,magenta \"npm run start -w backend\" \"npm run start -w frontend\"",
-    "typecheck": "npm run typecheck -w backend && npm run typecheck -w frontend",
-    "test": "npm run test -w backend",
-    "auth:linkedin": "npm run auth:linkedin -w backend",
-    "auth:google": "npm run auth:google -w backend",
-    "auth:google:refresh": "npm run auth:google:refresh -w backend",
-    "auth:google:capture": "npm run auth:google:capture -w backend",
-    "check:company-sources": "npm run check:company-sources -w backend",
-    "check:apify-source": "npm run check:apify-source -w backend",
-    "resume:import": "npm run resume:import -w backend",
-    "resume:import:secondary": "npm run resume:import:secondary -w backend",
+    "dev": "concurrently -n backend,frontend -c violet,magenta \"bun run --cwd backend dev\" \"bun run --cwd frontend dev\"",
+    "dev:backend": "bun run --cwd backend dev",
+    "dev:frontend": "bun run --cwd frontend dev",
+    "dev:worker": "bun run --cwd backend dev:worker",
+    "dev:discovery-worker": "bun run --cwd backend dev:discovery-worker",
+    "dev:cron": "bun run --cwd backend dev:cron",
+    "build": "bun run --cwd backend build && bun run --cwd frontend build",
+    "start": "bun run --cwd backend start",
+    "typecheck": "bun run --cwd backend typecheck && bun run --cwd frontend typecheck",
+    "test": "bun run --cwd backend test",
+    "session": "bun run --cwd backend session",
+    "auth:hash-password": "bun run --cwd backend auth:hash-password",
     "format": "prettier . --write",
     "format:check": "prettier . --check"
   },
   "engines": {
-    "node": ">=22.19.0"
+    "bun": ">=1.3.0"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",

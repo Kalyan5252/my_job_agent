@@ -1,0 +1,15 @@
+meta {
+  name: Delete resume
+  type: http
+  seq: 4
+}
+
+delete {
+  url: {{baseUrl}}/profile/resume
+  body: none
+  auth: inherit
+}
+
+params:query {
+  identity: {{identity}}
+}

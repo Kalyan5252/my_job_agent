@@ -1,0 +1,15 @@
+meta {
+  name: List applications
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/applications
+  body: none
+  auth: inherit
+}
+
+params:query {
+  limit: 50
+}

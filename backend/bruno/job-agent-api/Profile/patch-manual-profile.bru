@@ -1,0 +1,20 @@
+meta {
+  name: Patch manual profile
+  type: http
+  seq: 9
+}
+
+patch {
+  url: {{baseUrl}}/profile/manual
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "preferences": {
+      "noticePeriodDays": 0,
+      "expectedSalaryLpa": 12
+    }
+  }
+}

@@ -1,38 +1,110 @@
 openapi: 3.0.3
 info:
   title: Job Agent API
-  version: 0.1.0
+  version: 1.0.0
   description: >
-    API documentation for job discovery, application automation, profile hydration,
-    auth-session status, tracking, and health checks.
+    Job discovery, scoring, application automation, profile/resume management,
+    LinkedIn/Google session management, email tracking and a human-review queue.
+    All routes except /health, /health/ready, /auth/login and the docs require
+    `Authorization: Bearer <token or API key>` or `x-api-key: <API key>`.
 servers:
   - url: http://localhost:3000
     description: Local development
+security:
+  - bearerAuth: []
+  - apiKeyHeader: []
 tags:
-  - name: Discovery
-  - name: Profile
+  - name: Health
   - name: Auth
+  - name: Profile
+  - name: Sessions
+  - name: Discovery
+  - name: Jobs
   - name: Application
   - name: Tracking
-  - name: Health
+  - name: Manual review
+  - name: Dashboard
 paths:
+  /health:
+    $ref: ./paths/health.yaml#/~1health
+  /health/ready:
+    $ref: ./paths/health.yaml#/~1health~1ready
+  /auth/login:
+    $ref: ./paths/auth.yaml#/~1auth~1login
+  /auth/me:
+    $ref: ./paths/auth.yaml#/~1auth~1me
+  /profile:
+    $ref: ./paths/profile.yaml#/~1profile
+  /profile/resume:
+    $ref: ./paths/profile.yaml#/~1profile~1resume
+  /profile/candidate:
+    $ref: ./paths/profile.yaml#/~1profile~1candidate
+  /profile/manual:
+    $ref: ./paths/profile.yaml#/~1profile~1manual
+  /sessions:
+    $ref: ./paths/sessions.yaml#/~1sessions
+  /sessions/{provider}:
+    $ref: ./paths/sessions.yaml#/~1sessions~1{provider}
+  /sessions/{provider}/verify:
+    $ref: ./paths/sessions.yaml#/~1sessions~1{provider}~1verify
+  /sessions/{provider}/login:
+    $ref: ./paths/sessions.yaml#/~1sessions~1{provider}~1login
+  /sessions/{provider}/login/{loginId}/complete:
+    $ref: ./paths/sessions.yaml#/~1sessions~1{provider}~1login~1{loginId}~1complete
+  /sessions/{provider}/login/{loginId}:
+    $ref: ./paths/sessions.yaml#/~1sessions~1{provider}~1login~1{loginId}
   /workflows/discovery/run:
     $ref: ./paths/discovery.yaml#/~1workflows~1discovery~1run
   /workflows/discovery/understand:
     $ref: ./paths/discovery.yaml#/~1workflows~1discovery~1understand
-  /profile/candidate:
-    $ref: ./paths/profile.yaml#/~1profile~1candidate
-  /auth/linkedin/status:
-    $ref: ./paths/auth.yaml#/~1auth~1linkedin~1status
-  /auth/google/status:
-    $ref: ./paths/auth.yaml#/~1auth~1google~1status
+  /workflows/discovery/schedule:
+    $ref: ./paths/discovery.yaml#/~1workflows~1discovery~1schedule
+  /workflows/discovery/runs/{runId}:
+    $ref: ./paths/discovery.yaml#/~1workflows~1discovery~1runs~1{runId}
+  /jobs:
+    $ref: ./paths/jobs.yaml#/~1jobs
+  /jobs/{id}:
+    $ref: ./paths/jobs.yaml#/~1jobs~1{id}
+  /jobs/{id}/apply:
+    $ref: ./paths/jobs.yaml#/~1jobs~1{id}~1apply
   /workflows/application/run:
     $ref: ./paths/application.yaml#/~1workflows~1application~1run
+  /workflows/application/schedule:
+    $ref: ./paths/application.yaml#/~1workflows~1application~1schedule
+  /workflows/application/jobs/{jobId}:
+    $ref: ./paths/application.yaml#/~1workflows~1application~1jobs~1{jobId}
+  /applications:
+    $ref: ./paths/application.yaml#/~1applications
   /workflows/tracking/run:
     $ref: ./paths/tracking.yaml#/~1workflows~1tracking~1run
-  /health:
-    $ref: ./paths/health.yaml#/~1health
+  /manual-reviews:
+    $ref: ./paths/reviews.yaml#/~1manual-reviews
+  /manual-reviews/{id}:
+    $ref: ./paths/reviews.yaml#/~1manual-reviews~1{id}
+  /manual-reviews/{id}/screenshot:
+    $ref: ./paths/reviews.yaml#/~1manual-reviews~1{id}~1screenshot
+  /manual-reviews/{id}/open:
+    $ref: ./paths/reviews.yaml#/~1manual-reviews~1{id}~1open
+  /manual-reviews/{id}/resume:
+    $ref: ./paths/reviews.yaml#/~1manual-reviews~1{id}~1resume
+  /manual-reviews/{id}/resolve:
+    $ref: ./paths/reviews.yaml#/~1manual-reviews~1{id}~1resolve
+  /dashboard/summary:
+    $ref: ./paths/dashboard.yaml#/~1dashboard~1summary
+  /digests/email/preview:
+    $ref: ./paths/dashboard.yaml#/~1digests~1email~1preview
+  /digests/email/send:
+    $ref: ./paths/dashboard.yaml#/~1digests~1email~1send
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Token from POST /auth/login, or an API key from API_KEYS.
+    apiKeyHeader:
+      type: apiKey
+      in: header
+      name: x-api-key
   schemas:
     ErrorResponse:
       $ref: ./components/schemas.yaml#/ErrorResponse
@@ -42,17 +114,9 @@ components:
       $ref: ./components/schemas.yaml#/DiscoveryRunResult
     DiscoveryUnderstandResult:
       $ref: ./components/schemas.yaml#/DiscoveryUnderstandResult
-    CandidateProfileResponse:
-      $ref: ./components/schemas.yaml#/CandidateProfileResponse
-    AuthStatusResponse:
-      $ref: ./components/schemas.yaml#/AuthStatusResponse
-    GoogleAuthStatusResponse:
-      $ref: ./components/schemas.yaml#/GoogleAuthStatusResponse
     ApplicationRunRequest:
       $ref: ./components/schemas.yaml#/ApplicationRunRequest
     ApplicationRunResponse:
       $ref: ./components/schemas.yaml#/ApplicationRunResponse
-    TrackingRunResponse:
-      $ref: ./components/schemas.yaml#/TrackingRunResponse
     HealthResponse:
       $ref: ./components/schemas.yaml#/HealthResponse

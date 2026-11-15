@@ -3,6 +3,7 @@ import { simpleParser } from 'mailparser';
 import { env } from '../config/env';
 
 export interface ParsedEmail {
+  messageId: string;
   subject: string;
   from: string;
   text: string;
@@ -10,7 +11,12 @@ export interface ParsedEmail {
 }
 
 export class EmailParserTool {
-  async fetchRecent(limit = 20): Promise<ParsedEmail[]> {
+  isConfigured(): boolean {
+    return Boolean(env.IMAP_USER && env.IMAP_PASSWORD);
+  }
+
+  /** Fetch messages received in the last `sinceDays` days (newest `limit`). */
+  async fetchRecent(limit = 100, sinceDays = env.TRACKING_LOOKBACK_DAYS): Promise<ParsedEmail[]> {
     if (!env.IMAP_USER || !env.IMAP_PASSWORD) {
       return [];
     }
@@ -32,7 +38,8 @@ export class EmailParserTool {
             return;
           }
 
-          imap.search(['ALL'], (searchErr, results) => {
+          const since = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000);
+          imap.search([['SINCE', since]], (searchErr, results) => {
             if (searchErr) {
               reject(searchErr);
               return;
@@ -46,6 +53,7 @@ export class EmailParserTool {
             }
 
             const fetcher = imap.fetch(latest, { bodies: '' });
+            const pending: Array<Promise<void>> = [];
 
             fetcher.on('message', (msg) => {
               let raw = '';
@@ -56,25 +64,33 @@ export class EmailParserTool {
                 });
               });
 
-              msg.once('end', async () => {
+              msg.once('end', () => {
+                pending.push(parseOne());
+              });
+              const parseOne = async () => {
                 try {
                   const parsed = await simpleParser(raw);
+                  const fallbackId = `${parsed.date?.toISOString() ?? ''}|${parsed.from?.text ?? ''}|${parsed.subject ?? ''}`;
                   emails.push({
+                    messageId: parsed.messageId || fallbackId,
                     subject: parsed.subject || '',
                     from: parsed.from?.text || '',
-                    text: parsed.text || parsed.html || '',
+                    text: parsed.text || (typeof parsed.html === 'string' ? parsed.html : ''),
                     receivedAt: parsed.date || new Date(),
                   });
                 } catch {
                   // Ignore malformed messages; continue parsing the rest.
                 }
-              });
+              };
             });
 
             fetcher.once('error', reject);
             fetcher.once('end', () => {
-              imap.end();
-              resolve(emails);
+              // Parsing is async; wait for every message before resolving.
+              Promise.all(pending).then(() => {
+                imap.end();
+                resolve(emails);
+              }, reject);
             });
           });
         });

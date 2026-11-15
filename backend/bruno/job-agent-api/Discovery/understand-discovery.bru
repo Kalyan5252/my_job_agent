@@ -1,0 +1,30 @@
+meta {
+  name: Understand discovery
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/workflows/discovery/understand
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "role": "Backend Engineer",
+    "skills": [
+      "TypeScript",
+      "Node.js",
+      "PostgreSQL",
+      "AWS"
+    ],
+    "country": "India",
+    "locations": [
+      "Bengaluru",
+      "Hyderabad"
+    ],
+    "remoteOnly": false,
+    "maxResults": 30
+  }
+}

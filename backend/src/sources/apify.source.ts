@@ -175,7 +175,8 @@ export class ApifySource {
   }
 
   private isRelevant(job: JobPosting, query: JobSearchQuery): boolean {
-    const haystack = `${job.title} ${job.description} ${(job.requirements || []).join(' ')}`.toLowerCase();
+    const haystack =
+      `${job.title} ${job.description} ${(job.requirements || []).join(' ')}`.toLowerCase();
     const tokens = [query.role, ...(query.skills || [])]
       .flatMap((value) => value.toLowerCase().split(/[^a-z0-9+#.]+/g))
       .filter((token) => token.length >= 3);

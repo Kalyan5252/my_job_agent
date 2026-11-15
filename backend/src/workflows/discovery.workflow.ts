@@ -1,5 +1,6 @@
 import { BullDiscoveryTaskDispatcher } from '../queues/discovery.queue';
-import { NoopPipelineEventBus } from '../pipeline/eventBus';
+import { isRedisEnabled } from '../queues/apply.queue';
+import { HttpError } from '../lib/httpError';
 import {
   DiscoveryCompletedRunResult,
   DiscoveryPipelineResult,
@@ -50,6 +51,12 @@ export class DiscoveryWorkflow {
     profile: JobProfile,
     searchQuery?: Partial<JobSearchQuery>,
   ): Promise<DiscoveryPipelineResult> {
+    if (!isRedisEnabled()) {
+      throw new HttpError(
+        409,
+        'Scheduling needs Redis (REDIS_ENABLED=true). Use POST /workflows/discovery/run instead.',
+      );
+    }
     return this.scheduler.schedule(profile, searchQuery);
   }
 }
